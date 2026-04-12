@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "seed:manager": "ts-node-dev --transpile-only src/scripts/seed-manager.ts"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +24,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.6.0",
