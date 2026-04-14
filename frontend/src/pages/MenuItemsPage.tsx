@@ -16,34 +16,39 @@ import { useToast } from "../context/ToastContext";
 import { menuItemsApi, categoriesApi, ingredientsApi } from "../services/api";
 
 interface MenuItem {
-  id: number;
+  id: string;
   name: string;
-  description: string;
+  description?: string;
   price: number;
-  category_id: number;
-  category: string;
-  image_url: string;
-  status: string;
-  ingredients: number[];
+  categoryId: string;
+  categoryName: string;
+  imageUrl?: string;
+  isAvailable: boolean;
+  recipe: Array<{ ingredientId: string; quantity: number }>;
 }
 
 interface Category {
-  id: number;
+  id: string;
   name: string;
 }
 interface Ingredient {
-  id: number;
+  id: string;
   name: string;
+}
+
+interface RecipeFormItem {
+  ingredientId: string;
+  quantity: string;
 }
 
 interface FormState {
   name: string;
   description: string;
   price: string;
-  category_id: string;
-  image_url: string;
+  categoryId: string;
+  imageUrl: string;
   status: string;
-  ingredients: number[];
+  ingredients: RecipeFormItem[];
 }
 
 export default function MenuItemsPage() {
@@ -62,8 +67,8 @@ export default function MenuItemsPage() {
     name: "",
     description: "",
     price: "",
-    category_id: "",
-    image_url: "",
+    categoryId: "",
+    imageUrl: "",
     status: "available",
     ingredients: [],
   });
@@ -73,14 +78,39 @@ export default function MenuItemsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [menuData, catData, ingData] = await Promise.all([
-        menuItemsApi.list(),
-        categoriesApi.list(),
-        ingredientsApi.list(),
-      ]);
-      setItems(menuData as MenuItem[]);
-      setCategories(catData as Category[]);
-      setIngredients(ingData as Ingredient[]);
+      const [menuResult, categoryResult, ingredientResult] =
+        await Promise.allSettled([
+          menuItemsApi.list({ isActive: true }),
+          categoriesApi.list(),
+          ingredientsApi.list({ isActive: true }),
+        ]);
+
+      if (menuResult.status === "fulfilled") {
+        setItems(menuResult.value as MenuItem[]);
+      } else {
+        showToast(
+          `Không tải được danh sách món: ${menuResult.reason instanceof Error ? menuResult.reason.message : "Lỗi không xác định"}`,
+          "error",
+        );
+      }
+
+      if (categoryResult.status === "fulfilled") {
+        setCategories(categoryResult.value as Category[]);
+      } else {
+        showToast(
+          `Không tải được danh mục: ${categoryResult.reason instanceof Error ? categoryResult.reason.message : "Lỗi không xác định"}`,
+          "error",
+        );
+      }
+
+      if (ingredientResult.status === "fulfilled") {
+        setIngredients(ingredientResult.value as Ingredient[]);
+      } else {
+        showToast(
+          `Không tải được nguyên liệu: ${ingredientResult.reason instanceof Error ? ingredientResult.reason.message : "Lỗi không xác định"}`,
+          "error",
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -94,29 +124,48 @@ export default function MenuItemsPage() {
     name: "",
     description: "",
     price: "",
-    category_id: "",
-    image_url: "",
+    categoryId: "",
+    imageUrl: "",
     status: "available",
     ingredients: [],
   };
+
+  const isIngredientSelected = (ingredientId: string) =>
+    form.ingredients.some((item) => item.ingredientId === ingredientId);
+
+  const getIngredientQuantity = (ingredientId: string) =>
+    form.ingredients.find((item) => item.ingredientId === ingredientId)
+      ?.quantity ?? "1";
+
+  const getTotalRecipeQuantity = (recipe: Array<{ quantity: number }>) =>
+    recipe.reduce((total, item) => total + (Number(item.quantity) || 0), 0);
 
   const openAdd = () => {
     setEditing(null);
     setForm(emptyForm);
     setFormErrors({});
     setModalOpen(true);
+    if (categories.length === 0) {
+      showToast(
+        "Chưa có danh mục. Hãy tạo danh mục trước khi thêm món.",
+        "warning",
+      );
+    }
   };
 
   const openEdit = (item: MenuItem) => {
     setEditing(item);
     setForm({
       name: item.name,
-      description: item.description,
+      description: item.description || "",
       price: String(item.price),
-      category_id: String(item.category_id),
-      image_url: item.image_url,
-      status: item.status,
-      ingredients: item.ingredients || [],
+      categoryId: item.categoryId,
+      imageUrl: item.imageUrl || "",
+      status: item.isAvailable ? "available" : "unavailable",
+      ingredients: (item.recipe || []).map((r) => ({
+        ingredientId: r.ingredientId,
+        quantity: String(r.quantity ?? 1),
+      })),
     });
     setFormErrors({});
     setModalOpen(true);
@@ -127,7 +176,16 @@ export default function MenuItemsPage() {
     if (!form.name.trim()) e.name = "Tên món là bắt buộc";
     const price = parseFloat(form.price);
     if (isNaN(price) || price < 0) e.price = "Vui lòng nhập giá hợp lệ";
-    if (!form.category_id) e.category_id = "Vui lòng chọn danh mục";
+    if (!form.categoryId) e.categoryId = "Vui lòng chọn danh mục";
+    if (form.ingredients.length === 0) {
+      e.recipe = "Vui lòng chọn ít nhất 1 nguyên liệu";
+    }
+    form.ingredients.forEach((item, index) => {
+      const quantity = Number(item.quantity);
+      if (Number.isNaN(quantity) || quantity <= 0) {
+        e[`recipe-${index}`] = "Số lượng phải lớn hơn 0";
+      }
+    });
     return e;
   };
 
@@ -141,13 +199,16 @@ export default function MenuItemsPage() {
     setSaving(true);
     try {
       const payload = {
-        name: form.name,
-        description: form.description,
+        name: form.name.trim(),
+        description: form.description.trim() || undefined,
         price: parseFloat(form.price),
-        category_id: parseInt(form.category_id),
-        image_url: form.image_url,
-        status: form.status,
-        ingredients: form.ingredients,
+        categoryId: form.categoryId,
+        imageUrl: form.imageUrl.trim() || undefined,
+        isAvailable: form.status === "available",
+        recipe: form.ingredients.map((item) => ({
+          ingredientId: item.ingredientId,
+          quantity: Number(item.quantity),
+        })),
       };
       if (editing) {
         await menuItemsApi.update(editing.id, payload);
@@ -180,20 +241,31 @@ export default function MenuItemsPage() {
     }
   };
 
-  const toggleIngredient = (id: number) => {
+  const toggleIngredient = (id: string) => {
     setForm((f) => ({
       ...f,
-      ingredients: f.ingredients.includes(id)
-        ? f.ingredients.filter((i) => i !== id)
-        : [...f.ingredients, id],
+      ingredients: f.ingredients.some((item) => item.ingredientId === id)
+        ? f.ingredients.filter((item) => item.ingredientId !== id)
+        : [...f.ingredients, { ingredientId: id, quantity: "1" }],
+    }));
+  };
+
+  const updateIngredientQuantity = (ingredientId: string, quantity: string) => {
+    setForm((f) => ({
+      ...f,
+      ingredients: f.ingredients.map((item) =>
+        item.ingredientId === ingredientId ? { ...item, quantity } : item,
+      ),
     }));
   };
 
   const filtered = items.filter((m) => {
     const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
-    const matchCat = !filterCat || String(m.category_id) === filterCat;
+    const matchCat = !filterCat || m.categoryId === filterCat;
     return matchSearch && matchCat;
   });
+
+  const hasNoCategories = categories.length === 0;
 
   return (
     <div className="space-y-5">
@@ -281,7 +353,7 @@ export default function MenuItemsPage() {
               <div className="relative overflow-hidden h-44">
                 <img
                   src={
-                    item.image_url ||
+                    item.imageUrl ||
                     "https://images.pexels.com/photos/312418/pexels-photo-312418.jpeg?w=400"
                   }
                   alt={item.name}
@@ -292,12 +364,14 @@ export default function MenuItemsPage() {
                   }}
                 />
                 <div className="absolute top-2 right-2">
-                  <AvailabilityBadge status={item.status} />
+                  <AvailabilityBadge
+                    status={item.isAvailable ? "available" : "unavailable"}
+                  />
                 </div>
               </div>
               <div className="p-4">
                 <p className="text-xs text-terracotta font-semibold mb-1">
-                  {item.category}
+                  {item.categoryName || "Khác"}
                 </p>
                 <h3 className="font-serif font-semibold text-espresso text-base leading-tight mb-1">
                   {item.name}
@@ -305,6 +379,12 @@ export default function MenuItemsPage() {
                 <p className="text-xs text-espresso-400 mb-3 line-clamp-2">
                   {item.description}
                 </p>
+                <div className="mb-3 flex items-center justify-between text-xs text-espresso-400">
+                  <span>
+                    Tổng định lượng: {getTotalRecipeQuantity(item.recipe)}
+                  </span>
+                  <span>{item.recipe.length} nguyên liệu</span>
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-espresso text-lg">
                     ${item.price.toFixed(2)}
@@ -359,7 +439,7 @@ export default function MenuItemsPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <img
-                        src={item.image_url}
+                        src={item.imageUrl}
                         alt={item.name}
                         className="w-10 h-10 rounded-lg object-cover"
                         onError={(e) => {
@@ -374,17 +454,23 @@ export default function MenuItemsPage() {
                         <p className="text-xs text-espresso-400 truncate max-w-[160px]">
                           {item.description}
                         </p>
+                        <p className="text-[11px] text-espresso-400 mt-1">
+                          Tổng định lượng: {getTotalRecipeQuantity(item.recipe)}{" "}
+                          | {item.recipe.length} nguyên liệu
+                        </p>
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-espresso-500">
-                    {item.category}
+                    {item.categoryName || "Khác"}
                   </td>
                   <td className="px-4 py-3 font-bold text-espresso">
                     ${item.price.toFixed(2)}
                   </td>
                   <td className="px-4 py-3">
-                    <AvailabilityBadge status={item.status} />
+                    <AvailabilityBadge
+                      status={item.isAvailable ? "available" : "unavailable"}
+                    />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
@@ -451,22 +537,31 @@ export default function MenuItemsPage() {
             <div>
               <label className="label">Danh mục *</label>
               <select
-                className={`input-field ${formErrors.category_id ? "border-red-400" : ""}`}
-                value={form.category_id}
+                className={`input-field ${formErrors.categoryId ? "border-red-400" : ""}`}
+                value={form.categoryId}
+                disabled={hasNoCategories}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, category_id: e.target.value }))
+                  setForm((f) => ({ ...f, categoryId: e.target.value }))
                 }
               >
-                <option value="">Chọn danh mục</option>
+                <option value="">
+                  {hasNoCategories ? "Chưa có danh mục nào" : "Chọn danh mục"}
+                </option>
                 {categories.map((c) => (
                   <option key={c.id} value={String(c.id)}>
                     {c.name}
                   </option>
                 ))}
               </select>
-              {formErrors.category_id && (
+              {hasNoCategories && (
+                <p className="text-amber-700 text-xs mt-1">
+                  Cần tạo ít nhất 1 danh mục ở trang Danh mục trước khi thêm
+                  món.
+                </p>
+              )}
+              {formErrors.categoryId && (
                 <p className="text-red-500 text-xs mt-1">
-                  {formErrors.category_id}
+                  {formErrors.categoryId}
                 </p>
               )}
             </div>
@@ -487,9 +582,9 @@ export default function MenuItemsPage() {
               <input
                 className="input-field"
                 placeholder="https://..."
-                value={form.image_url}
+                value={form.imageUrl}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, image_url: e.target.value }))
+                  setForm((f) => ({ ...f, imageUrl: e.target.value }))
                 }
               />
             </div>
@@ -509,22 +604,46 @@ export default function MenuItemsPage() {
           </div>
           <div>
             <label className="label">Nguyên liệu</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto p-3 bg-cream-50 rounded-lg border border-cream-200">
-              {ingredients.map((ing) => (
-                <label
-                  key={ing.id}
-                  className="flex items-center gap-2 text-sm text-espresso cursor-pointer hover:text-terracotta"
-                >
-                  <input
-                    type="checkbox"
-                    checked={form.ingredients.includes(ing.id)}
-                    onChange={() => toggleIngredient(ing.id)}
-                    className="accent-terracotta"
-                  />
-                  {ing.name}
-                </label>
-              ))}
+            <div className="grid gap-2 max-h-52 overflow-y-auto p-3 bg-cream-50 rounded-lg border border-cream-200">
+              {ingredients.map((ing) => {
+                const selected = isIngredientSelected(ing.id);
+                const quantity = getIngredientQuantity(ing.id);
+
+                return (
+                  <div
+                    key={ing.id}
+                    className="grid grid-cols-[1fr_120px] items-center gap-3 rounded-md border border-cream-200 bg-white px-3 py-2"
+                  >
+                    <label className="flex items-center gap-2 text-sm text-espresso cursor-pointer hover:text-terracotta min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleIngredient(ing.id)}
+                        className="accent-terracotta"
+                      />
+                      <span className="truncate">{ing.name}</span>
+                    </label>
+                    <div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.0001"
+                        disabled={!selected}
+                        value={quantity}
+                        onChange={(e) =>
+                          updateIngredientQuantity(ing.id, e.target.value)
+                        }
+                        className="input-field py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        placeholder="Số lượng"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+            {formErrors.recipe && (
+              <p className="text-red-500 text-xs mt-1">{formErrors.recipe}</p>
+            )}
           </div>
           <div className="flex gap-3 justify-end pt-2">
             <button
@@ -534,8 +653,18 @@ export default function MenuItemsPage() {
             >
               Hủy
             </button>
-            <button type="submit" disabled={saving} className="btn-primary">
-              {saving ? "Đang lưu..." : editing ? "Cập nhật" : "Tạo mới"}
+            <button
+              type="submit"
+              disabled={saving || hasNoCategories}
+              className="btn-primary"
+            >
+              {saving
+                ? "Đang lưu..."
+                : hasNoCategories
+                  ? "Cần tạo danh mục trước"
+                  : editing
+                    ? "Cập nhật"
+                    : "Tạo mới"}
             </button>
           </div>
         </form>

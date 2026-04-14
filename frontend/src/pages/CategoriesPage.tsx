@@ -4,13 +4,9 @@ import Modal, { ConfirmModal } from "../components/Modal";
 import EmptyState from "../components/EmptyState";
 import { SkeletonTable } from "../components/SkeletonLoader";
 import { useToast } from "../context/ToastContext";
-import { categoriesApi } from "../services/api";
+import { categoriesApi, type CategoryRecord } from "../services/api";
 
-interface Category {
-  id: number;
-  name: string;
-  description: string;
-}
+type Category = CategoryRecord;
 
 interface FormState {
   name: string;
@@ -33,7 +29,9 @@ export default function CategoriesPage() {
     setLoading(true);
     try {
       const data = await categoriesApi.list();
-      setItems(data as Category[]);
+      setItems(data);
+    } catch (err) {
+      showToast((err as Error).message, "error");
     } finally {
       setLoading(false);
     }
@@ -52,7 +50,7 @@ export default function CategoriesPage() {
 
   const openEdit = (cat: Category) => {
     setEditing(cat);
-    setForm({ name: cat.name, description: cat.description });
+    setForm({ name: cat.name, description: cat.description || "" });
     setFormErrors({});
     setModalOpen(true);
   };
@@ -106,7 +104,7 @@ export default function CategoriesPage() {
   const filtered = items.filter(
     (c) =>
       c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.description.toLowerCase().includes(search.toLowerCase()),
+      (c.description || "").toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
