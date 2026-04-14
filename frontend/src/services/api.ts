@@ -26,6 +26,16 @@ type BackendSuccessEnvelope<T> = {
   meta?: Record<string, unknown>;
 };
 
+class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 let _mockMenuItems = [...mockMenuItems];
 let _mockOrders = [...mockOrders];
 let _mockTables = [...mockTables];
@@ -65,7 +75,7 @@ async function request<T>(
           : typeof err.message === "string"
             ? err.message
             : res.statusText || "Request failed";
-    throw new Error(msg);
+    throw new ApiError(msg, res.status);
   }
 
   const parsed = (await res.json()) as BackendSuccessEnvelope<T> | T;
@@ -95,12 +105,19 @@ async function tryRequest<T>(
   method: string,
   path: string,
   body?: unknown,
-  mockFallback?: () => T,
+  mockFallback?: () => T | undefined,
 ): Promise<T> {
   try {
     return await request<T>(method, path, body);
-  } catch {
-    if (mockFallback) return mockResponse(mockFallback());
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    if (mockFallback) {
+      const fallback = mockFallback();
+      if (fallback !== undefined) return mockResponse(fallback);
+    }
     throw new Error("API unreachable and no mock available");
   }
 }
@@ -489,7 +506,7 @@ export type OrderRecord = {
 
 type BackendOrderRecord = {
   _id?: string;
-  id?: string;
+  id?: string | number;
   tableId?:
     | string
     | {
@@ -516,7 +533,7 @@ type BackendOrderRecord = {
   }>;
   totalAmount?: number;
   total?: number;
-  status: OrderStatus;
+  status: OrderStatus | string;
   source?: "pos" | "mobile" | string;
   note?: string;
   customerName?: string;
@@ -586,6 +603,15 @@ const normalizeOrderTable = (
 };
 
 const normalizeOrder = (item: BackendOrderRecord): OrderRecord => {
+  const normalizedStatus: OrderStatus =
+    item.status === "pending" ||
+    item.status === "preparing" ||
+    item.status === "served" ||
+    item.status === "paid" ||
+    item.status === "cancelled"
+      ? item.status
+      : "pending";
+
   const table = normalizeOrderTable(item.tableId, {
     tableId: item.table_id,
     table_number: item.table_number,
@@ -620,7 +646,7 @@ const normalizeOrder = (item: BackendOrderRecord): OrderRecord => {
     .filter((orderItem) => Boolean(orderItem.menuItemId));
 
   return {
-    id: item.id ?? item._id ?? "",
+    id: String(item.id ?? item._id ?? ""),
     tableId: table?.id ?? String(item.table_id ?? ""),
     table,
     items,
@@ -628,7 +654,7 @@ const normalizeOrder = (item: BackendOrderRecord): OrderRecord => {
       item.totalAmount ??
       item.total ??
       items.reduce((sum, orderItem) => sum + orderItem.lineTotal, 0),
-    status: item.status,
+    status: normalizedStatus,
     source: item.source ?? "pos",
     note: item.note,
     customerName: item.customerName,
@@ -649,7 +675,7 @@ export const ordersApi = {
       `/orders${query}`,
       undefined,
       () => {
-        let orders = [..._mockOrders] as BackendOrderRecord[];
+        let orders = [..._mockOrders] as unknown as BackendOrderRecord[];
         if (params?.status) {
           orders = orders.filter((o) => o.status === params.status);
         }
@@ -725,7 +751,7 @@ export const ordersApi = {
           : null,
         items,
         totalAmount: Math.round(totalAmount * 100) / 100,
-        status: "pending",
+        status: "pending" as OrderStatus,
         source: "pos",
         note: data.note,
         customerName: data.customerName,
@@ -745,11 +771,21 @@ export const ordersApi = {
       `/orders/${id}/status`,
       { status },
       () => {
-        _mockOrders = _mockOrders.map((o) =>
-          String((o as { id?: string | number }).id) === id
-            ? { ...(o as never), status }
-            : o,
-        );
+        _mockOrders = _mockOrders.map((o) => {
+          if (String((o as { id?: string | number }).id) !== id) {
+            return o;
+          }
+
+          const base =
+            typeof o === "object" && o !== null
+              ? (o as Record<string, unknown>)
+              : {};
+
+          return {
+            ...base,
+            status,
+          } as unknown as (typeof _mockOrders)[number];
+        });
         return _mockOrders.find(
           (o) => String((o as { id?: string | number }).id) === id,
         ) as BackendOrderRecord | undefined;
@@ -815,6 +851,9 @@ const normalizeTable = (item: BackendTableRecord): TableRecord => {
         ? item.status !== "inactive"
         : true;
 
+  // Generate menu URL for QR code
+  const menuUrl = `${window.location.origin}/menu/table-${code}`;
+
   return {
     id,
     code,
@@ -825,7 +864,7 @@ const normalizeTable = (item: BackendTableRecord): TableRecord => {
     status: isActive ? "available" : "unavailable",
     qr_code:
       item.qr_code ??
-      `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(`table-${code}`)}&size=180x180`,
+      `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(menuUrl)}&size=180x180`,
   };
 };
 

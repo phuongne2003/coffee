@@ -6,7 +6,7 @@ import { useToast } from "../context/ToastContext";
 import { authApi } from "../services/api";
 
 export default function RegisterPage() {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, login, user } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -20,7 +20,11 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
 
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  const getHomeRoute = (role?: string) =>
+    role === "customer" ? "/menu" : "/dashboard";
+
+  if (isAuthenticated)
+    return <Navigate to={getHomeRoute(user?.role)} replace />;
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -53,7 +57,7 @@ export default function RegisterPage() {
       });
       login(res.token, res.user);
       showToast("Tạo tài khoản thành công", "success");
-      navigate("/dashboard");
+      navigate(getHomeRoute(res.user.role), { replace: true });
     } catch (err) {
       showToast((err as Error).message || "Đăng ký thất bại", "error");
     } finally {

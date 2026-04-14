@@ -42,7 +42,7 @@ interface TrendData {
   orders: number;
 }
 interface InventoryData {
-  ingredient_id: number;
+  ingredient_id: string | number;
   name: string;
   stock: number;
   threshold: number;
