@@ -19,6 +19,9 @@ const swaggerDefinition = {
     { name: "Categories", description: "Quản lý danh mục món ăn" },
     { name: "Ingredients", description: "Quản lý nguyên liệu và tồn kho" },
     { name: "MenuItems", description: "Quản lý món ăn" },
+    { name: "Tables", description: "Quản lý bàn" },
+    { name: "Orders", description: "Đặt món tại bàn (POS)" },
+    { name: "MobileOrder", description: "Đặt món qua QR/table code" },
   ],
   components: {
     securitySchemes: {
@@ -131,6 +134,23 @@ const swaggerDefinition = {
             type: "string",
             example: "6618f20d3d80dd8f0d7ce114",
           },
+          recipe: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["ingredientId", "quantity"],
+              properties: {
+                ingredientId: {
+                  type: "string",
+                  example: "6618f20d3d80dd8f0d7ce115",
+                },
+                quantity: {
+                  type: "number",
+                  example: 18,
+                },
+              },
+            },
+          },
           price: { type: "number", example: 45000 },
           description: {
             type: "string",
@@ -149,6 +169,96 @@ const swaggerDefinition = {
         required: ["isAvailable"],
         properties: {
           isAvailable: { type: "boolean", example: false },
+        },
+      },
+      TableRequest: {
+        type: "object",
+        required: ["code", "name"],
+        properties: {
+          code: { type: "string", example: "B01" },
+          name: { type: "string", example: "Bàn 1" },
+          capacity: { type: "number", example: 4 },
+          isActive: { type: "boolean", example: true },
+        },
+      },
+      TableToggleRequest: {
+        type: "object",
+        required: ["isActive"],
+        properties: {
+          isActive: { type: "boolean", example: false },
+        },
+      },
+      OrderItemRequest: {
+        type: "object",
+        required: ["menuItemId", "quantity"],
+        properties: {
+          menuItemId: {
+            type: "string",
+            example: "6618f20d3d80dd8f0d7ce116",
+          },
+          quantity: { type: "number", example: 2 },
+          note: { type: "string", example: "Ít đá" },
+        },
+      },
+      PosOrderRequest: {
+        type: "object",
+        required: ["tableId", "items"],
+        properties: {
+          tableId: {
+            type: "string",
+            example: "6618f20d3d80dd8f0d7ce117",
+          },
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/OrderItemRequest" },
+          },
+          note: { type: "string", example: "Khách cần phục vụ nhanh" },
+          customerName: { type: "string", example: "Khách lẻ" },
+        },
+      },
+      MobileOrderRequest: {
+        type: "object",
+        required: ["tableCode", "items"],
+        properties: {
+          tableCode: { type: "string", example: "B01" },
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/OrderItemRequest" },
+          },
+          note: { type: "string", example: "Mang ra trước 1 ly" },
+          customerName: { type: "string", example: "Nguyễn Văn B" },
+        },
+      },
+      UpdateOrderItemsRequest: {
+        type: "object",
+        required: ["items"],
+        properties: {
+          items: {
+            type: "array",
+            items: { $ref: "#/components/schemas/OrderItemRequest" },
+          },
+          note: { type: "string", example: "Update ghi chú sau khi sửa món" },
+        },
+      },
+      UpdateOrderTableRequest: {
+        type: "object",
+        required: ["tableId"],
+        properties: {
+          tableId: {
+            type: "string",
+            example: "6618f20d3d80dd8f0d7ce118",
+          },
+        },
+      },
+      UpdateOrderStatusRequest: {
+        type: "object",
+        required: ["status"],
+        properties: {
+          status: {
+            type: "string",
+            enum: ["pending", "preparing", "served", "paid", "cancelled"],
+            example: "preparing",
+          },
         },
       },
     },
@@ -465,6 +575,309 @@ const swaggerDefinition = {
           },
           "403": { description: "Không có quyền truy cập" },
           "404": { description: "Không tìm thấy món ăn" },
+        },
+      },
+    },
+    "/api/tables": {
+      get: {
+        tags: ["Tables"],
+        summary: "Lấy danh sách bàn",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "Danh sách bàn" },
+        },
+      },
+      post: {
+        tags: ["Tables"],
+        summary: "Tạo bàn mới",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/TableRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "Tạo bàn thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "409": { description: "Mã bàn đã tồn tại" },
+        },
+      },
+    },
+    "/api/tables/{id}": {
+      get: {
+        tags: ["Tables"],
+        summary: "Lấy chi tiết bàn",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": { description: "Chi tiết bàn" },
+          "404": { description: "Không tìm thấy bàn" },
+        },
+      },
+      patch: {
+        tags: ["Tables"],
+        summary: "Cập nhật bàn",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/TableRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Cập nhật bàn thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Không tìm thấy bàn" },
+        },
+      },
+      delete: {
+        tags: ["Tables"],
+        summary: "Xóa bàn (soft delete)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": { description: "Xóa bàn thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Không tìm thấy bàn" },
+        },
+      },
+    },
+    "/api/tables/{id}/toggle": {
+      patch: {
+        tags: ["Tables"],
+        summary: "Bật hoặc tắt bàn",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/TableToggleRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Cập nhật trạng thái bàn thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Không tìm thấy bàn" },
+        },
+      },
+    },
+    "/api/orders": {
+      get: {
+        tags: ["Orders"],
+        summary: "Lấy danh sách đơn hàng theo bàn và trạng thái",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "Danh sách đơn hàng" },
+        },
+      },
+      post: {
+        tags: ["Orders"],
+        summary: "Tạo đơn hàng từ POS",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PosOrderRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "Tạo đơn hàng thành công" },
+          "404": { description: "Bàn hoặc món không tồn tại" },
+        },
+      },
+    },
+    "/api/orders/{id}": {
+      get: {
+        tags: ["Orders"],
+        summary: "Lấy chi tiết đơn hàng",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": { description: "Chi tiết đơn hàng" },
+          "404": { description: "Không tìm thấy đơn hàng" },
+        },
+      },
+      delete: {
+        tags: ["Orders"],
+        summary: "Hủy đơn hàng",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": { description: "Hủy đơn hàng thành công" },
+          "400": { description: "Đơn không thể hủy" },
+          "404": { description: "Không tìm thấy đơn hàng" },
+        },
+      },
+    },
+    "/api/orders/{id}/items": {
+      patch: {
+        tags: ["Orders"],
+        summary: "Thêm bớt món trong đơn hàng",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateOrderItemsRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Cập nhật món trong đơn thành công" },
+          "400": { description: "Đơn hàng không cho phép chỉnh sửa" },
+        },
+      },
+    },
+    "/api/orders/{id}/table": {
+      patch: {
+        tags: ["Orders"],
+        summary: "Đổi bàn cho đơn hàng",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateOrderTableRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Đổi bàn thành công" },
+          "400": { description: "Đơn hàng không cho phép chỉnh sửa" },
+        },
+      },
+    },
+    "/api/orders/{id}/status": {
+      patch: {
+        tags: ["Orders"],
+        summary: "Cập nhật trạng thái đơn hàng",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/UpdateOrderStatusRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Cập nhật trạng thái thành công" },
+          "400": {
+            description:
+              "Chuyển trạng thái không hợp lệ hoặc không đủ nguyên liệu khi served",
+          },
+        },
+      },
+    },
+    "/api/mobile/menu/{tableCode}": {
+      get: {
+        tags: ["MobileOrder"],
+        summary: "Khách quét QR/table code để lấy menu",
+        parameters: [
+          {
+            name: "tableCode",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": { description: "Menu theo bàn" },
+          "404": { description: "Không tìm thấy bàn" },
+        },
+      },
+    },
+    "/api/mobile/orders": {
+      post: {
+        tags: ["MobileOrder"],
+        summary: "Khách tạo đơn hàng theo bàn",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/MobileOrderRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "Tạo đơn hàng thành công" },
+          "404": { description: "Không tìm thấy bàn hoặc món" },
         },
       },
     },

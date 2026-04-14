@@ -2,9 +2,25 @@ import { z } from "zod";
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/;
 
+const recipeItemSchema = z.object({
+  ingredientId: z.string().regex(objectIdRegex, "Nguyên liệu không hợp lệ"),
+  quantity: z.coerce.number().positive("Định lượng nguyên liệu phải lớn hơn 0"),
+});
+
+const recipeSchema = z
+  .array(recipeItemSchema)
+  .refine(
+    (items) =>
+      new Set(items.map((item) => item.ingredientId)).size === items.length,
+    {
+      message: "Công thức không được chứa nguyên liệu trùng lặp",
+    },
+  );
+
 export const createMenuItemSchema = z.object({
   name: z.string().trim().min(2, "Tên món phải có ít nhất 2 ký tự"),
   categoryId: z.string().regex(objectIdRegex, "Danh mục không hợp lệ"),
+  recipe: recipeSchema.optional(),
   price: z.coerce.number().min(0, "Giá không được âm"),
   description: z.string().trim().max(500).optional(),
   imageUrl: z.url("URL ảnh không hợp lệ").optional(),
