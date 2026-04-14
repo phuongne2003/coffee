@@ -7,7 +7,7 @@ import { useToast } from "../context/ToastContext";
 import { tablesApi } from "../services/api";
 
 interface Table {
-  id: number;
+  id: string;
   number: number;
   capacity: number;
   status: string;
@@ -176,7 +176,7 @@ export default function TablesPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {tables.map((table) => (
             <div
-              key={table.id}
+              key={`${table.id}-${table.number}`}
               className={`card p-5 transition-all hover:shadow-md ${
                 table.status === "occupied"
                   ? "ring-2 ring-amber-300 bg-amber-50/30"
