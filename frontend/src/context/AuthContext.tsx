@@ -1,5 +1,11 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import type { AuthUser } from '../services/api';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import type { AuthUser } from "../services/api";
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -12,29 +18,42 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('cafe_token'));
+  const [token, setToken] = useState<string | null>(() =>
+    localStorage.getItem("cafe_token"),
+  );
   const [user, setUser] = useState<AuthUser | null>(() => {
-    const stored = localStorage.getItem('cafe_user');
+    const stored = localStorage.getItem("cafe_user");
     if (!stored) return null;
     try {
       const u = JSON.parse(stored) as Record<string, unknown>;
-      if (typeof u.name !== 'string' && typeof u.username === 'string') {
-        u.name = u.username as string;
-      }
-      return u as unknown as AuthUser;
+      const fullName =
+        typeof u.fullName === "string"
+          ? u.fullName
+          : typeof u.name === "string"
+            ? u.name
+            : typeof u.username === "string"
+              ? u.username
+              : "";
+
+      return {
+        id: typeof u.id === "string" ? u.id : "",
+        fullName,
+        email: typeof u.email === "string" ? u.email : "",
+        role: typeof u.role === "string" ? u.role : "customer",
+      };
     } catch {
       return null;
     }
   });
 
   useEffect(() => {
-    if (token) localStorage.setItem('cafe_token', token);
-    else localStorage.removeItem('cafe_token');
+    if (token) localStorage.setItem("cafe_token", token);
+    else localStorage.removeItem("cafe_token");
   }, [token]);
 
   useEffect(() => {
-    if (user) localStorage.setItem('cafe_user', JSON.stringify(user));
-    else localStorage.removeItem('cafe_user');
+    if (user) localStorage.setItem("cafe_user", JSON.stringify(user));
+    else localStorage.removeItem("cafe_user");
   }, [user]);
 
   const login = (newToken: string, newUser: AuthUser) => {
@@ -48,7 +67,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isAuthenticated: !!token }}>
+    <AuthContext.Provider
+      value={{ user, token, login, logout, isAuthenticated: !!token }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -56,6 +77,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }

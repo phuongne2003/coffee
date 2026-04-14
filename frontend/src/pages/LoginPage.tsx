@@ -1,16 +1,16 @@
-import { useState, FormEvent } from 'react';
-import { Link, useNavigate, Navigate } from 'react-router-dom';
-import { Coffee, Eye, EyeOff } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
-import { authApi } from '../services/api';
+import { useState, FormEvent } from "react";
+import { Link, useNavigate, Navigate } from "react-router-dom";
+import { Coffee, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
+import { authApi } from "../services/api";
 
 export default function LoginPage() {
   const { login, isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [form, setForm] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
@@ -19,26 +19,29 @@ export default function LoginPage() {
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!form.email) e.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Enter a valid email';
-    if (!form.password) e.password = 'Password is required';
-    else if (form.password.length < 6) e.password = 'At least 6 characters';
+    if (!form.email) e.email = "Email is required";
+    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = "Enter a valid email";
+    if (!form.password) e.password = "Password is required";
+    else if (form.password.length < 8) e.password = "At least 8 characters";
     return e;
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const errs = validate();
-    if (Object.keys(errs).length) { setErrors(errs); return; }
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      return;
+    }
     setErrors({});
     setLoading(true);
     try {
       const res = await authApi.login(form);
       login(res.token, res.user);
-      showToast('Welcome back!', 'success');
-      navigate('/dashboard');
+      showToast("Welcome back!", "success");
+      navigate("/dashboard");
     } catch (err) {
-      showToast((err as Error).message || 'Login failed', 'error');
+      showToast((err as Error).message || "Login failed", "error");
     } finally {
       setLoading(false);
     }
@@ -48,7 +51,12 @@ export default function LoginPage() {
     <div className="min-h-screen flex">
       <div
         className="hidden lg:flex lg:w-1/2 bg-espresso-800 items-center justify-center relative overflow-hidden"
-        style={{ backgroundImage: 'url(https://images.pexels.com/photos/1995842/pexels-photo-1995842.jpeg?w=800)', backgroundSize: 'cover', backgroundPosition: 'center' }}
+        style={{
+          backgroundImage:
+            "url(https://images.pexels.com/photos/1995842/pexels-photo-1995842.jpeg?w=800)",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
       >
         <div className="absolute inset-0 bg-espresso-800/75" />
         <div className="relative text-center px-8">
@@ -69,44 +77,58 @@ export default function LoginPage() {
             <div className="w-10 h-10 rounded-xl bg-terracotta flex items-center justify-center">
               <Coffee size={20} className="text-white" />
             </div>
-            <span className="font-serif text-2xl font-bold text-espresso">BrewDesk</span>
+            <span className="font-serif text-2xl font-bold text-espresso">
+              BrewDesk
+            </span>
           </div>
 
-          <h2 className="font-serif text-3xl font-semibold text-espresso mb-1">Welcome back</h2>
-          <p className="text-espresso-400 text-sm mb-8">Sign in to your account to continue</p>
+          <h2 className="font-serif text-3xl font-semibold text-espresso mb-1">
+            Welcome back
+          </h2>
+          <p className="text-espresso-400 text-sm mb-8">
+            Sign in to your account to continue
+          </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="label">Email</label>
               <input
                 type="email"
-                className={`input-field ${errors.email ? 'border-red-400 ring-1 ring-red-300' : ''}`}
+                className={`input-field ${errors.email ? "border-red-400 ring-1 ring-red-300" : ""}`}
                 placeholder="admin@cafe.com"
                 value={form.email}
-                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, email: e.target.value }))
+                }
               />
-              {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+              {errors.email && (
+                <p className="text-red-500 text-xs mt-1">{errors.email}</p>
+              )}
             </div>
 
             <div>
               <label className="label">Password</label>
               <div className="relative">
                 <input
-                  type={showPw ? 'text' : 'password'}
-                  className={`input-field pr-10 ${errors.password ? 'border-red-400 ring-1 ring-red-300' : ''}`}
-                  placeholder="••••••••"
+                  type={showPw ? "text" : "password"}
+                  className={`input-field pr-10 ${errors.password ? "border-red-400 ring-1 ring-red-300" : ""}`}
+                  placeholder="At least 8 characters"
                   value={form.password}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, password: e.target.value }))
+                  }
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPw(p => !p)}
+                  onClick={() => setShowPw((p) => !p)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-espresso-400 hover:text-espresso"
                 >
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-              {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+              {errors.password && (
+                <p className="text-red-500 text-xs mt-1">{errors.password}</p>
+              )}
             </div>
 
             <button
@@ -114,13 +136,16 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full py-2.5 bg-terracotta hover:bg-terracotta-600 text-white font-medium rounded-xl transition-all disabled:opacity-60 shadow-md hover:shadow-lg"
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? "Signing in..." : "Sign in"}
             </button>
           </form>
 
           <p className="text-center text-sm text-espresso-400 mt-6">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-terracotta hover:text-terracotta-600 font-medium">
+            Don't have an account?{" "}
+            <Link
+              to="/register"
+              className="text-terracotta hover:text-terracotta-600 font-medium"
+            >
               Create one
             </Link>
           </p>
@@ -128,7 +153,8 @@ export default function LoginPage() {
           <div className="mt-8 p-4 bg-cream-200 rounded-xl border border-cream-300">
             <p className="text-xs text-espresso-500 font-semibold mb-1">API</p>
             <p className="text-xs text-espresso-400">
-              Đăng nhập bằng tài khoản đã đăng ký trên server ({import.meta.env.VITE_API_URL || 'http://localhost:3000'}).
+              Đăng nhập bằng tài khoản đã đăng ký trên server (
+              {import.meta.env.VITE_API_URL || "http://localhost:3000"}).
             </p>
           </div>
         </div>
