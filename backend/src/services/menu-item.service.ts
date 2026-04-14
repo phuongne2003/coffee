@@ -95,12 +95,11 @@ export const updateMenuItem = async (
 export const deleteMenuItem = async (id: string) => {
   const menuItem = await MenuItem.findById(id);
 
-  if (!menuItem || !menuItem.isActive) {
+  if (!menuItem) {
     throw new HttpError(404, "Không tìm thấy món ăn");
   }
 
-  menuItem.isActive = false;
-  await menuItem.save();
+  await MenuItem.deleteOne({ _id: menuItem._id });
 
   return menuItem;
 };
