@@ -1,4 +1,5 @@
 import { Category } from "../models/category.model";
+import { MenuItem } from "../models/menu-item.model";
 import {
   CreateCategoryInput,
   ReorderCategoriesInput,
@@ -63,12 +64,13 @@ export const deleteCategory = async (id: string) => {
     throw new HttpError(404, "Không tìm thấy danh mục");
   }
 
-  if (!category.isActive) {
-    throw new HttpError(404, "Không tìm thấy danh mục");
-  }
+  const categoryId = category._id;
 
-  category.isActive = false;
-  await category.save();
+  await Promise.all([
+    // Remove menu items under this category to avoid dangling category references.
+    MenuItem.deleteMany({ categoryId }),
+    Category.deleteOne({ _id: categoryId }),
+  ]);
 
   return category;
 };
@@ -108,10 +110,7 @@ export const listCategories = async (params: {
   const page = params.page ?? 1;
   const limit = params.limit ?? 10;
   const skip = (page - 1) * limit;
-  const filter = buildSearchFilter({
-    ...params,
-    isActive: params.isActive ?? true,
-  });
+  const filter = buildSearchFilter(params);
 
   const [items, totalItems] = await Promise.all([
     Category.find(filter)
