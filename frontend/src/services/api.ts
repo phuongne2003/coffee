@@ -1,11 +1,4 @@
-import {
-  mockCategories,
-  mockIngredients,
-  mockMenuItems,
-  mockOrders,
-  mockTables,
-  mockReports,
-} from "./mockData";
+import { mockMenuItems, mockOrders, mockTables, mockReports } from "./mockData";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
 
@@ -33,8 +26,6 @@ type BackendSuccessEnvelope<T> = {
   meta?: Record<string, unknown>;
 };
 
-let _mockCategories = [...mockCategories];
-let _mockIngredients = [...mockIngredients];
 let _mockMenuItems = [...mockMenuItems];
 let _mockOrders = [...mockOrders];
 let _mockTables = [...mockTables];
@@ -58,6 +49,7 @@ async function request<T>(
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
+    cache: "no-store",
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -126,36 +118,73 @@ export const authApi = {
     request<{ userId: string; email: string; role: string }>("GET", "/auth/me"),
 };
 
+export type CategoryRecord = {
+  id: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+type BackendCategoryRecord = {
+  _id?: string;
+  id?: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+const normalizeCategory = (item: BackendCategoryRecord): CategoryRecord => ({
+  id: item.id ?? item._id ?? "",
+  name: item.name,
+  description: item.description,
+  isActive: item.isActive,
+  sortOrder: item.sortOrder,
+});
+
 export const categoriesApi = {
-  list: () =>
-    tryRequest<typeof mockCategories>(
-      "GET",
-      "/categories",
-      undefined,
-      () => _mockCategories,
+  list: (params?: { search?: string; isActive?: boolean }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (typeof params?.isActive === "boolean") {
+      query.set("isActive", String(params.isActive));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+
+    return request<BackendCategoryRecord[]>("GET", `/categories${suffix}`).then(
+      (items) => items.map(normalizeCategory),
+    );
+  },
+  get: (id: string) =>
+    request<BackendCategoryRecord>("GET", `/categories/${id}`).then(
+      normalizeCategory,
     ),
-  get: (id: number) =>
-    tryRequest("GET", `/categories/${id}`, undefined, () =>
-      _mockCategories.find((c) => c.id === id),
+  create: (data: {
+    name: string;
+    description?: string;
+    sortOrder?: number;
+    isActive?: boolean;
+  }) =>
+    request<BackendCategoryRecord>("POST", "/categories", data).then(
+      normalizeCategory,
     ),
-  create: (data: { name: string; description: string }) =>
-    tryRequest("POST", "/categories", data, () => {
-      const item = { id: _nextId++, ...data };
-      _mockCategories.push(item);
-      return item;
-    }),
-  update: (id: number, data: { name: string; description: string }) =>
-    tryRequest("PUT", `/categories/${id}`, data, () => {
-      _mockCategories = _mockCategories.map((c) =>
-        c.id === id ? { ...c, ...data } : c,
-      );
-      return _mockCategories.find((c) => c.id === id);
-    }),
-  delete: (id: number) =>
-    tryRequest("DELETE", `/categories/${id}`, undefined, () => {
-      _mockCategories = _mockCategories.filter((c) => c.id !== id);
-      return { success: true };
-    }),
+  update: (
+    id: string,
+    data: Partial<{
+      name: string;
+      description?: string;
+      sortOrder: number;
+      isActive: boolean;
+    }>,
+  ) =>
+    request<BackendCategoryRecord>("PATCH", `/categories/${id}`, data).then(
+      normalizeCategory,
+    ),
+  delete: (id: string) =>
+    request<BackendCategoryRecord>("DELETE", `/categories/${id}`).then(
+      normalizeCategory,
+    ),
 };
 
 export type IngredientRecord = {
@@ -277,55 +306,150 @@ export const ingredientsApi = {
 };
 
 export const menuItemsApi = {
-  list: () =>
-    tryRequest<typeof mockMenuItems>(
-      "GET",
-      "/menu-items",
-      undefined,
-      () => _mockMenuItems,
-    ),
-  get: (id: number) =>
-    tryRequest("GET", `/menu-items/${id}`, undefined, () =>
-      _mockMenuItems.find((m) => m.id === id),
+  list: (params?: {
+    search?: string;
+    categoryId?: string;
+    isAvailable?: boolean;
+    isActive?: boolean;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (params?.categoryId) query.set("categoryId", params.categoryId);
+    if (typeof params?.isAvailable === "boolean") {
+      query.set("isAvailable", String(params.isAvailable));
+    }
+    if (typeof params?.isActive === "boolean") {
+      query.set("isActive", String(params.isActive));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+
+    return request<BackendMenuItemRecord[]>("GET", `/menu-items${suffix}`).then(
+      (items) => items.map(normalizeMenuItem),
+    );
+  },
+  get: (id: string) =>
+    request<BackendMenuItemRecord>("GET", `/menu-items/${id}`).then(
+      normalizeMenuItem,
     ),
   create: (data: {
     name: string;
-    description: string;
+    description?: string;
     price: number;
-    category_id: number;
-    image_url: string;
-    status: string;
-    ingredients: number[];
+    categoryId: string;
+    imageUrl?: string;
+    isAvailable?: boolean;
+    recipe?: Array<{ ingredientId: string; quantity: number }>;
   }) =>
-    tryRequest("POST", "/menu-items", data, () => {
-      const cat = _mockCategories.find((c) => c.id === data.category_id);
-      const item = { id: _nextId++, ...data, category: cat?.name || "" };
-      _mockMenuItems.push(item);
-      return item;
-    }),
+    request<BackendMenuItemRecord>("POST", "/menu-items", data).then(
+      normalizeMenuItem,
+    ),
   update: (
-    id: number,
+    id: string,
     data: Partial<{
       name: string;
-      description: string;
+      description?: string;
       price: number;
-      category_id: number;
-      image_url: string;
-      status: string;
-      ingredients: number[];
+      categoryId: string;
+      imageUrl?: string;
+      isAvailable: boolean;
+      recipe: Array<{ ingredientId: string; quantity: number }>;
     }>,
   ) =>
-    tryRequest("PUT", `/menu-items/${id}`, data, () => {
-      _mockMenuItems = _mockMenuItems.map((m) =>
-        m.id === id ? { ...m, ...data } : m,
-      );
-      return _mockMenuItems.find((m) => m.id === id);
-    }),
-  delete: (id: number) =>
-    tryRequest("DELETE", `/menu-items/${id}`, undefined, () => {
-      _mockMenuItems = _mockMenuItems.filter((m) => m.id !== id);
-      return { success: true };
-    }),
+    request<BackendMenuItemRecord>("PATCH", `/menu-items/${id}`, data).then(
+      normalizeMenuItem,
+    ),
+  delete: (id: string) =>
+    request<BackendMenuItemRecord>("DELETE", `/menu-items/${id}`).then(
+      normalizeMenuItem,
+    ),
+  toggleAvailability: (id: string, isAvailable: boolean) =>
+    request<BackendMenuItemRecord>("PATCH", `/menu-items/${id}/availability`, {
+      isAvailable,
+    }).then(normalizeMenuItem),
+};
+
+export type MenuItemRecord = {
+  id: string;
+  name: string;
+  categoryId: string;
+  categoryName: string;
+  recipe: Array<{ ingredientId: string; quantity: number }>;
+  price: number;
+  description?: string;
+  imageUrl?: string;
+  isAvailable: boolean;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type BackendMenuItemRecord = {
+  _id?: string;
+  id?: string;
+  name: string;
+  categoryId:
+    | string
+    | {
+        _id?: string;
+        id?: string;
+        name?: string;
+      }
+    | null;
+  recipe?: Array<{
+    ingredientId: string | { _id?: string; id?: string } | null;
+    quantity: number;
+  }>;
+  price: number;
+  description?: string;
+  imageUrl?: string;
+  isAvailable: boolean;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+const normalizeMenuItem = (item: BackendMenuItemRecord): MenuItemRecord => {
+  const categoryRef = item.categoryId;
+  const categoryId =
+    typeof categoryRef === "string"
+      ? categoryRef
+      : categoryRef && typeof categoryRef === "object"
+        ? (categoryRef.id ?? categoryRef._id ?? "")
+        : "";
+  const categoryName =
+    categoryRef && typeof categoryRef === "object"
+      ? (categoryRef.name ?? "")
+      : "";
+
+  return {
+    id: item.id ?? item._id ?? "",
+    name: item.name,
+    categoryId,
+    categoryName,
+    recipe: (item.recipe ?? [])
+      .map((r) => {
+        const ingredientRef = r.ingredientId;
+        const ingredientId =
+          typeof ingredientRef === "string"
+            ? ingredientRef
+            : ingredientRef && typeof ingredientRef === "object"
+              ? (ingredientRef.id ?? ingredientRef._id ?? "")
+              : "";
+
+        return {
+          ingredientId,
+          quantity: r.quantity,
+        };
+      })
+      .filter((r) => Boolean(r.ingredientId)),
+    price: item.price,
+    description: item.description,
+    imageUrl: item.imageUrl,
+    isAvailable: item.isAvailable,
+    isActive: item.isActive,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
 };
 
 export const ordersApi = {
