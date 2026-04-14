@@ -58,12 +58,11 @@ export const updateTable = async (id: string, payload: UpdateTableInput) => {
 export const deleteTable = async (id: string) => {
   const table = await Table.findById(id);
 
-  if (!table || !table.isActive) {
+  if (!table) {
     throw new HttpError(404, "Không tìm thấy bàn");
   }
 
-  table.isActive = false;
-  await table.save();
+  await Table.deleteOne({ _id: table._id });
 
   return table;
 };
