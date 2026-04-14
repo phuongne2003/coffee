@@ -452,112 +452,453 @@ const normalizeMenuItem = (item: BackendMenuItemRecord): MenuItemRecord => {
   };
 };
 
+type OrderStatus = "pending" | "preparing" | "served" | "paid" | "cancelled";
+
+export type OrderTableRecord = {
+  id: string;
+  code: string;
+  name: string;
+  capacity: number;
+  isActive: boolean;
+};
+
+export type OrderItemRecord = {
+  menuItemId: string;
+  name: string;
+  unitPrice: number;
+  quantity: number;
+  note?: string;
+  lineTotal: number;
+};
+
+export type OrderRecord = {
+  id: string;
+  tableId: string;
+  table: OrderTableRecord | null;
+  items: OrderItemRecord[];
+  totalAmount: number;
+  status: OrderStatus;
+  source: "pos" | "mobile" | string;
+  note?: string;
+  customerName?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  servedAt?: string;
+  paidAt?: string;
+};
+
+type BackendOrderRecord = {
+  _id?: string;
+  id?: string;
+  tableId?:
+    | string
+    | {
+        _id?: string;
+        id?: string;
+        code?: string;
+        name?: string;
+        capacity?: number;
+        isActive?: boolean;
+      }
+    | null;
+  table_id?: string | number;
+  table_number?: number;
+  table_name?: string;
+  items?: Array<{
+    menuItemId?: string | number | { _id?: string; id?: string } | null;
+    menu_item_id?: string | number | null;
+    name: string;
+    unitPrice?: number;
+    price?: number;
+    quantity: number;
+    note?: string;
+    lineTotal?: number;
+  }>;
+  totalAmount?: number;
+  total?: number;
+  status: OrderStatus;
+  source?: "pos" | "mobile" | string;
+  note?: string;
+  customerName?: string;
+  createdAt?: string;
+  created_at?: string;
+  updatedAt?: string;
+  servedAt?: string;
+  paidAt?: string;
+};
+
+const normalizeOrderTable = (
+  tableRef:
+    | BackendOrderRecord["tableId"]
+    | {
+        _id?: string;
+        id?: string;
+        code?: string;
+        name?: string;
+        capacity?: number;
+        isActive?: boolean;
+      }
+    | null
+    | undefined,
+  fallback: {
+    tableId?: string | number;
+    table_number?: number;
+    table_name?: string;
+  } = {},
+): OrderTableRecord | null => {
+  if (
+    !tableRef &&
+    fallback.tableId === undefined &&
+    fallback.table_number === undefined
+  ) {
+    return null;
+  }
+
+  if (typeof tableRef === "string") {
+    return {
+      id: tableRef,
+      code: tableRef,
+      name: fallback.table_name || `Bàn ${fallback.table_number ?? tableRef}`,
+      capacity: 0,
+      isActive: true,
+    };
+  }
+
+  if (tableRef && typeof tableRef === "object") {
+    const id = tableRef.id ?? tableRef._id ?? "";
+    return {
+      id,
+      code: tableRef.code ?? tableRef.name ?? id,
+      name: tableRef.name ?? tableRef.code ?? `Bàn ${id}`,
+      capacity: tableRef.capacity ?? 0,
+      isActive: tableRef.isActive ?? true,
+    };
+  }
+
+  const id = String(fallback.tableId ?? fallback.table_number ?? "");
+  return {
+    id,
+    code: String(fallback.table_number ?? fallback.tableId ?? id),
+    name: fallback.table_name || `Bàn ${fallback.table_number ?? id}`,
+    capacity: 0,
+    isActive: true,
+  };
+};
+
+const normalizeOrder = (item: BackendOrderRecord): OrderRecord => {
+  const table = normalizeOrderTable(item.tableId, {
+    tableId: item.table_id,
+    table_number: item.table_number,
+    table_name: item.table_name,
+  });
+
+  const rawItems = item.items ?? [];
+  const items = rawItems
+    .map((orderItem) => {
+      const menuItemRef =
+        orderItem.menuItemId ?? orderItem.menu_item_id ?? null;
+      const menuItemId =
+        typeof menuItemRef === "string"
+          ? menuItemRef
+          : typeof menuItemRef === "number"
+            ? String(menuItemRef)
+            : menuItemRef && typeof menuItemRef === "object"
+              ? (menuItemRef.id ?? menuItemRef._id ?? "")
+              : "";
+
+      return {
+        menuItemId,
+        name: orderItem.name,
+        unitPrice: orderItem.unitPrice ?? orderItem.price ?? 0,
+        quantity: orderItem.quantity,
+        note: orderItem.note,
+        lineTotal:
+          orderItem.lineTotal ??
+          (orderItem.unitPrice ?? orderItem.price ?? 0) * orderItem.quantity,
+      };
+    })
+    .filter((orderItem) => Boolean(orderItem.menuItemId));
+
+  return {
+    id: item.id ?? item._id ?? "",
+    tableId: table?.id ?? String(item.table_id ?? ""),
+    table,
+    items,
+    totalAmount:
+      item.totalAmount ??
+      item.total ??
+      items.reduce((sum, orderItem) => sum + orderItem.lineTotal, 0),
+    status: item.status,
+    source: item.source ?? "pos",
+    note: item.note,
+    customerName: item.customerName,
+    createdAt: item.createdAt ?? item.created_at,
+    updatedAt: item.updatedAt,
+    servedAt: item.servedAt,
+    paidAt: item.paidAt,
+  };
+};
+
 export const ordersApi = {
   list: (params?: { status?: string; from?: string; to?: string }) => {
     const query = params
       ? "?" + new URLSearchParams(params as Record<string, string>).toString()
       : "";
-    return tryRequest<typeof mockOrders>(
+    return tryRequest<BackendOrderRecord[]>(
       "GET",
       `/orders${query}`,
       undefined,
       () => {
-        let orders = [..._mockOrders];
-        if (params?.status)
+        let orders = [..._mockOrders] as BackendOrderRecord[];
+        if (params?.status) {
           orders = orders.filter((o) => o.status === params.status);
+        }
         return orders;
       },
+    ).then((items) =>
+      (items ?? [])
+        .filter((item): item is BackendOrderRecord => Boolean(item))
+        .map(normalizeOrder),
     );
   },
-  get: (id: number) =>
-    tryRequest("GET", `/orders/${id}`, undefined, () =>
-      _mockOrders.find((o) => o.id === id),
-    ),
-  create: (data: {
-    table_id: number;
-    items: { menu_item_id: number; quantity: number; price: number }[];
-  }) =>
-    tryRequest("POST", "/orders", data, () => {
-      const table = _mockTables.find((t) => t.id === data.table_id);
-      const total = data.items.reduce(
-        (sum, i) => sum + i.price * i.quantity,
-        0,
-      );
-      const menuItemMap = Object.fromEntries(
-        _mockMenuItems.map((m) => [m.id, m.name]),
-      );
-      const order = {
-        id: _nextId++,
-        table_id: data.table_id,
-        table_number: table?.number || 0,
-        items: data.items.map((i) => ({
-          ...i,
-          name: menuItemMap[i.menu_item_id] || "",
-        })),
-        total: Math.round(total * 100) / 100,
-        status: "pending",
-        created_at: new Date().toISOString(),
-      };
-      _mockOrders.unshift(order);
-      if (table) {
-        _mockTables = _mockTables.map((t) =>
-          t.id === data.table_id ? { ...t, status: "occupied" } : t,
-        );
+  get: (id: string) =>
+    tryRequest<BackendOrderRecord>("GET", `/orders/${id}`, undefined, () =>
+      _mockOrders.find(
+        (o) => String((o as { id?: string | number }).id) === id,
+      ),
+    ).then((item) => {
+      if (!item) {
+        throw new Error("Không tìm thấy đơn hàng");
       }
-      return order;
+      return normalizeOrder(item);
     }),
-  updateStatus: (id: number, status: string) =>
-    tryRequest("PUT", `/orders/${id}/status`, { status }, () => {
-      _mockOrders = _mockOrders.map((o) =>
-        o.id === id ? { ...o, status } : o,
+  create: (data: {
+    tableId: string;
+    items: { menuItemId: string; quantity: number; note?: string }[];
+    note?: string;
+    customerName?: string;
+  }) =>
+    tryRequest<BackendOrderRecord>("POST", "/orders", data, () => {
+      const table = _mockTables.find(
+        (t) => String((t as { id?: string | number }).id) === data.tableId,
+      ) as
+        | {
+            id?: string | number;
+            number?: number;
+            name?: string;
+            capacity?: number;
+          }
+        | undefined;
+      const menuItemMap = new Map(
+        _mockMenuItems.map((m) => [
+          String((m as { id?: string | number }).id),
+          m,
+        ]),
       );
-      return _mockOrders.find((o) => o.id === id);
+      const items = data.items.map((item) => {
+        const menuItem = menuItemMap.get(item.menuItemId) as
+          | { id?: string | number; name?: string; price?: number }
+          | undefined;
+        const unitPrice = menuItem?.price ?? 0;
+
+        return {
+          menuItemId: item.menuItemId,
+          name: menuItem?.name ?? "",
+          unitPrice,
+          quantity: item.quantity,
+          note: item.note,
+          lineTotal: unitPrice * item.quantity,
+        };
+      });
+      const totalAmount = items.reduce((sum, item) => sum + item.lineTotal, 0);
+      const order = {
+        id: String(_nextId++),
+        tableId: table
+          ? {
+              id: String(table.id ?? data.tableId),
+              code: String(table.number ?? table.id ?? data.tableId),
+              name:
+                table.name ?? `Bàn ${table.number ?? table.id ?? data.tableId}`,
+              capacity: table.capacity ?? 0,
+              isActive: true,
+            }
+          : null,
+        items,
+        totalAmount: Math.round(totalAmount * 100) / 100,
+        status: "pending",
+        source: "pos",
+        note: data.note,
+        customerName: data.customerName,
+        createdAt: new Date().toISOString(),
+      };
+      _mockOrders.unshift(order as never);
+      return order;
+    }).then((item) => {
+      if (!item) {
+        throw new Error("Không thể tạo đơn hàng");
+      }
+      return normalizeOrder(item);
     }),
-  delete: (id: number) =>
-    tryRequest("DELETE", `/orders/${id}`, undefined, () => {
-      _mockOrders = _mockOrders.filter((o) => o.id !== id);
-      return { success: true };
+  updateStatus: (id: string, status: string) =>
+    tryRequest<BackendOrderRecord>(
+      "PATCH",
+      `/orders/${id}/status`,
+      { status },
+      () => {
+        _mockOrders = _mockOrders.map((o) =>
+          String((o as { id?: string | number }).id) === id
+            ? { ...(o as never), status }
+            : o,
+        );
+        return _mockOrders.find(
+          (o) => String((o as { id?: string | number }).id) === id,
+        ) as BackendOrderRecord | undefined;
+      },
+    ).then((item) => {
+      if (!item) {
+        throw new Error("Không tìm thấy đơn hàng để cập nhật trạng thái");
+      }
+      return normalizeOrder(item);
     }),
+  delete: (id: string) =>
+    tryRequest<BackendOrderRecord>("DELETE", `/orders/${id}`, undefined, () => {
+      _mockOrders = _mockOrders.filter(
+        (o) => String((o as { id?: string | number }).id) !== id,
+      );
+      return {
+        id,
+        status: "cancelled",
+        items: [],
+        totalAmount: 0,
+        source: "pos",
+      } as BackendOrderRecord;
+    }).then((item) => {
+      if (!item) {
+        throw new Error("Không tìm thấy đơn hàng để xóa");
+      }
+      return normalizeOrder(item);
+    }),
+};
+
+type BackendTableRecord = {
+  _id?: string;
+  id?: string;
+  code?: string;
+  name?: string;
+  capacity?: number;
+  isActive?: boolean;
+  number?: number;
+  status?: string;
+  qr_code?: string;
+};
+
+export type TableRecord = {
+  id: string;
+  code: string;
+  name: string;
+  capacity: number;
+  isActive: boolean;
+  // Legacy compatibility fields used by current UI pages.
+  number: number;
+  status: string;
+  qr_code: string;
+};
+
+const normalizeTable = (item: BackendTableRecord): TableRecord => {
+  const id = item.id ?? item._id ?? "";
+  const code = item.code ?? (item.number ? String(item.number) : id);
+  const parsedNumber = Number.parseInt(code.replace(/\D+/g, ""), 10);
+  const isActive =
+    typeof item.isActive === "boolean"
+      ? item.isActive
+      : item.status
+        ? item.status !== "inactive"
+        : true;
+
+  return {
+    id,
+    code,
+    name: item.name ?? `Bàn ${code}`,
+    capacity: item.capacity ?? 0,
+    isActive,
+    number: Number.isNaN(parsedNumber) ? 0 : parsedNumber,
+    status: isActive ? "available" : "unavailable",
+    qr_code:
+      item.qr_code ??
+      `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(`table-${code}`)}&size=180x180`,
+  };
 };
 
 export const tablesApi = {
   list: () =>
-    tryRequest<typeof mockTables>(
+    tryRequest<BackendTableRecord[]>(
       "GET",
       "/tables",
       undefined,
-      () => _mockTables,
-    ),
-  get: (id: number) =>
-    tryRequest("GET", `/tables/${id}`, undefined, () =>
-      _mockTables.find((t) => t.id === id),
-    ),
-  create: (data: { number: number; capacity: number }) =>
-    tryRequest("POST", "/tables", data, () => {
-      const item = {
-        id: _nextId++,
-        ...data,
-        status: "available",
-        qr_code: `https://api.qrserver.com/v1/create-qr-code/?data=table-${data.number}&size=100x100`,
+      () => _mockTables as unknown as BackendTableRecord[],
+    ).then((items) => items.map(normalizeTable)),
+  get: (id: string) =>
+    tryRequest<BackendTableRecord>("GET", `/tables/${id}`, undefined, () =>
+      (_mockTables as unknown as BackendTableRecord[]).find(
+        (t) => String(t.id) === id,
+      ),
+    ).then(normalizeTable),
+  create: (data: { number: number; capacity: number }) => {
+    const payload = {
+      code: `T${data.number}`,
+      name: `Bàn ${data.number}`,
+      capacity: data.capacity,
+    };
+
+    return tryRequest<BackendTableRecord>("POST", "/tables", payload, () => {
+      const item: BackendTableRecord = {
+        id: String(_nextId++),
+        code: payload.code,
+        name: payload.name,
+        capacity: payload.capacity,
+        isActive: true,
       };
-      _mockTables.push(item);
+      _mockTables.push(item as never);
       return item;
-    }),
+    }).then(normalizeTable);
+  },
   update: (
-    id: number,
+    id: string,
     data: { number: number; capacity: number; status: string },
-  ) =>
-    tryRequest("PUT", `/tables/${id}`, data, () => {
-      _mockTables = _mockTables.map((t) =>
-        t.id === id ? { ...t, ...data } : t,
-      );
-      return _mockTables.find((t) => t.id === id);
-    }),
-  delete: (id: number) =>
-    tryRequest("DELETE", `/tables/${id}`, undefined, () => {
-      _mockTables = _mockTables.filter((t) => t.id !== id);
-      return { success: true };
-    }),
+  ) => {
+    const updatePayload = {
+      code: `T${data.number}`,
+      name: `Bàn ${data.number}`,
+      capacity: data.capacity,
+    };
+
+    return tryRequest<BackendTableRecord>(
+      "PATCH",
+      `/tables/${id}`,
+      updatePayload,
+      () => {
+        _mockTables = (_mockTables as unknown as BackendTableRecord[]).map(
+          (t) => (String(t.id) === id ? { ...t, ...updatePayload } : t),
+        ) as never[];
+        return (_mockTables as unknown as BackendTableRecord[]).find(
+          (t) => String(t.id) === id,
+        ) as BackendTableRecord | undefined;
+      },
+    ).then(normalizeTable);
+  },
+  delete: (id: string) =>
+    tryRequest<BackendTableRecord>("DELETE", `/tables/${id}`, undefined, () => {
+      _mockTables = (_mockTables as unknown as BackendTableRecord[]).filter(
+        (t) => String(t.id) !== id,
+      ) as never[];
+      return {
+        id,
+        code: id,
+        name: `Bàn ${id}`,
+        capacity: 0,
+        isActive: false,
+      };
+    }).then(normalizeTable),
 };
 
 export const reportsApi = {

@@ -6,102 +6,146 @@ import {
   ShoppingCart,
   X,
   Minus,
-  ChevronDown,
   Search,
 } from "lucide-react";
 import { ConfirmModal } from "../components/Modal";
 import EmptyState from "../components/EmptyState";
 import { SkeletonTable } from "../components/SkeletonLoader";
-import { StatusBadge } from "../components/Badge";
 import { useToast } from "../context/ToastContext";
 import {
   ordersApi,
   menuItemsApi,
   tablesApi,
   categoriesApi,
+  type CategoryRecord,
+  type MenuItemRecord,
+  type OrderRecord,
 } from "../services/api";
 
-interface OrderItem {
-  menu_item_id: number;
+type OrderStatus = OrderRecord["status"];
+
+interface TableOption {
+  id: string;
+  code: string;
   name: string;
-  quantity: number;
-  price: number;
-}
-interface Order {
-  id: number;
-  table_id: number;
-  table_number: number;
-  items: OrderItem[];
-  total: number;
-  status: string;
-  created_at: string;
-}
-interface MenuItem {
-  id: number;
-  name: string;
-  price: number;
-  category_id: number;
-  category: string;
-  image_url: string;
-  status: string;
-}
-interface Table {
-  id: number;
-  number: number;
   capacity: number;
-  status: string;
+  isActive: boolean;
 }
-interface Category {
-  id: number;
-  name: string;
-}
+
 interface CartItem {
-  menu_item_id: number;
+  menuItemId: string;
   name: string;
   price: number;
   quantity: number;
 }
 
-const STATUS_OPTIONS = [
-  "pending",
-  "preparing",
-  "ready",
-  "completed",
-  "cancelled",
-];
+const STATUS_LABELS: Record<OrderStatus, string> = {
+  pending: "Chờ xử lý",
+  preparing: "Đang chuẩn bị",
+  served: "Đã phục vụ",
+  paid: "Đã thanh toán",
+  cancelled: "Đã hủy",
+};
+
+const STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  pending: ["preparing", "cancelled"],
+  preparing: ["served", "cancelled"],
+  served: ["paid"],
+  paid: [],
+  cancelled: [],
+};
 
 export default function OrdersPage() {
   const { showToast } = useToast();
   const [view, setView] = useState<"list" | "pos">("list");
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [tables, setTables] = useState<Table[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItemRecord[]>([]);
+  const [tables, setTables] = useState<TableOption[]>([]);
+  const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<OrderRecord | null>(null);
   const [saving, setSaving] = useState(false);
   const [filterStatus, setFilterStatus] = useState("");
   const [search, setSearch] = useState("");
 
-  const [selectedTable, setSelectedTable] = useState<number | "">("");
+  const [selectedTable, setSelectedTable] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [menuSearch, setMenuSearch] = useState("");
   const [posSubmitting, setPosSubmitting] = useState(false);
 
+  const normalizeTable = (table: {
+    _id?: string;
+    id?: string;
+    code?: string;
+    name?: string;
+    capacity?: number;
+    isActive?: boolean;
+    number?: number;
+    status?: string;
+  }): TableOption => ({
+    id: table.id ?? table._id ?? String(table.number ?? ""),
+    code: table.code ?? String(table.number ?? table.id ?? table._id ?? ""),
+    name: table.name ?? `Bàn ${table.code ?? table.number ?? table.id ?? ""}`,
+    capacity: table.capacity ?? 0,
+    isActive:
+      typeof table.isActive === "boolean"
+        ? table.isActive
+        : table.status
+          ? table.status === "available" || table.status === "occupied"
+          : true,
+  });
+
   const load = async () => {
     setLoading(true);
     try {
-      const [ordersData, menuData, tablesData, catData] = await Promise.all([
-        ordersApi.list(),
-        menuItemsApi.list(),
-        tablesApi.list(),
-        categoriesApi.list(),
-      ]);
-      setOrders(ordersData as Order[]);
-      setMenuItems(menuData as MenuItem[]);
-      setTables(tablesData as Table[]);
-      setCategories(catData as Category[]);
+      const [ordersResult, menuResult, tablesResult, categoryResult] =
+        await Promise.allSettled([
+          ordersApi.list(),
+          menuItemsApi.list(),
+          tablesApi.list(),
+          categoriesApi.list(),
+        ]);
+
+      if (ordersResult.status === "fulfilled") {
+        setOrders(ordersResult.value);
+      } else {
+        showToast(
+          `Không tải được danh sách đơn: ${ordersResult.reason instanceof Error ? ordersResult.reason.message : "Lỗi không xác định"}`,
+          "error",
+        );
+      }
+
+      if (menuResult.status === "fulfilled") {
+        setMenuItems(menuResult.value);
+      } else {
+        showToast(
+          `Không tải được món ăn: ${menuResult.reason instanceof Error ? menuResult.reason.message : "Lỗi không xác định"}`,
+          "error",
+        );
+      }
+
+      if (tablesResult.status === "fulfilled") {
+        setTables(
+          (tablesResult.value as Array<Record<string, unknown>>).map((table) =>
+            normalizeTable(table as never),
+          ),
+        );
+      } else {
+        showToast(
+          `Không tải được danh sách bàn: ${tablesResult.reason instanceof Error ? tablesResult.reason.message : "Lỗi không xác định"}`,
+          "error",
+        );
+      }
+
+      if (categoryResult.status === "fulfilled") {
+        setCategories(categoryResult.value);
+      } else {
+        showToast(
+          `Không tải được danh mục: ${categoryResult.reason instanceof Error ? categoryResult.reason.message : "Lỗi không xác định"}`,
+          "error",
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -111,7 +155,7 @@ export default function OrdersPage() {
     load();
   }, []);
 
-  const handleStatusChange = async (id: number, status: string) => {
+  const handleStatusChange = async (id: string, status: OrderStatus) => {
     try {
       await ordersApi.updateStatus(id, status);
       setOrders((prev) =>
@@ -138,17 +182,17 @@ export default function OrdersPage() {
     }
   };
 
-  const addToCart = (item: MenuItem) => {
+  const addToCart = (item: MenuItemRecord) => {
     setCart((prev) => {
-      const existing = prev.find((c) => c.menu_item_id === item.id);
+      const existing = prev.find((c) => c.menuItemId === item.id);
       if (existing)
         return prev.map((c) =>
-          c.menu_item_id === item.id ? { ...c, quantity: c.quantity + 1 } : c,
+          c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c,
         );
       return [
         ...prev,
         {
-          menu_item_id: item.id,
+          menuItemId: item.id,
           name: item.name,
           price: item.price,
           quantity: 1,
@@ -157,10 +201,10 @@ export default function OrdersPage() {
     });
   };
 
-  const updateCartQty = (id: number, delta: number) => {
+  const updateCartQty = (id: string, delta: number) => {
     setCart((prev) => {
       const updated = prev.map((c) =>
-        c.menu_item_id === id ? { ...c, quantity: c.quantity + delta } : c,
+        c.menuItemId === id ? { ...c, quantity: c.quantity + delta } : c,
       );
       return updated.filter((c) => c.quantity > 0);
     });
@@ -180,11 +224,10 @@ export default function OrdersPage() {
     setPosSubmitting(true);
     try {
       await ordersApi.create({
-        table_id: selectedTable as number,
+        tableId: selectedTable,
         items: cart.map((c) => ({
-          menu_item_id: c.menu_item_id,
+          menuItemId: c.menuItemId,
           quantity: c.quantity,
-          price: c.price,
         })),
       });
       showToast("Tạo đơn hàng thành công", "success");
@@ -204,15 +247,14 @@ export default function OrdersPage() {
     const matchSearch =
       !search ||
       String(o.id).includes(search) ||
-      String(o.table_number).includes(search);
+      (o.table?.name || o.table?.code || "").includes(search);
     return matchStatus && matchSearch;
   });
 
   const filteredMenu = menuItems.filter((m) => {
-    const matchCat =
-      !selectedCategory || String(m.category_id) === selectedCategory;
+    const matchCat = !selectedCategory || m.categoryId === selectedCategory;
     const matchSearch = m.name.toLowerCase().includes(menuSearch.toLowerCase());
-    return matchCat && matchSearch && m.status === "available";
+    return matchCat && matchSearch && m.isAvailable;
   });
 
   const formatTime = (iso: string) => {
@@ -279,9 +321,9 @@ export default function OrdersPage() {
               onChange={(e) => setFilterStatus(e.target.value)}
             >
               <option value="">Tất cả trạng thái</option>
-              {STATUS_OPTIONS.map((s) => (
+              {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
                 <option key={s} value={s} className="capitalize">
-                  {s}
+                  {STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
@@ -346,7 +388,7 @@ export default function OrdersPage() {
                         #{order.id}
                       </td>
                       <td className="px-4 py-3 font-semibold text-espresso">
-                        Bàn {order.table_number}
+                        {order.table?.name || order.table?.code || "Chưa rõ"}
                       </td>
                       <td className="px-4 py-3 text-espresso-500 max-w-[180px]">
                         <div className="truncate text-xs">
@@ -356,32 +398,38 @@ export default function OrdersPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 font-bold text-espresso">
-                        ${order.total.toFixed(2)}
+                        ${order.totalAmount.toFixed(2)}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="relative group inline-block">
-                          <button className="flex items-center gap-1">
-                            <StatusBadge status={order.status} />
-                            <ChevronDown
-                              size={12}
-                              className="text-espresso-400"
-                            />
-                          </button>
-                          <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-cream-200 py-1 z-10 min-w-[130px] hidden group-hover:block">
-                            {STATUS_OPTIONS.map((s) => (
-                              <button
-                                key={s}
-                                onClick={() => handleStatusChange(order.id, s)}
-                                className={`block w-full text-left px-3 py-1.5 text-sm capitalize hover:bg-cream-100 ${order.status === s ? "text-terracotta font-semibold" : "text-espresso"}`}
-                              >
-                                {s}
-                              </button>
+                        <div>
+                          <select
+                            className="input-field py-1 text-xs min-w-[150px]"
+                            value={order.status}
+                            onChange={(e) => {
+                              const next = e.target.value as OrderStatus;
+                              if (next !== order.status) {
+                                handleStatusChange(order.id, next);
+                              }
+                            }}
+                            disabled={
+                              STATUS_TRANSITIONS[order.status].length === 0
+                            }
+                          >
+                            <option value={order.status}>
+                              {STATUS_LABELS[order.status]}
+                            </option>
+                            {STATUS_TRANSITIONS[order.status].map((s) => (
+                              <option key={s} value={s}>
+                                {STATUS_LABELS[s]}
+                              </option>
                             ))}
-                          </div>
+                          </select>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-espresso-400 whitespace-nowrap">
-                        {formatTime(order.created_at)}
+                        {formatTime(
+                          order.createdAt || new Date().toISOString(),
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end">
@@ -438,7 +486,7 @@ export default function OrdersPage() {
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {filteredMenu.map((item) => {
-                const inCart = cart.find((c) => c.menu_item_id === item.id);
+                const inCart = cart.find((c) => c.menuItemId === item.id);
                 return (
                   <button
                     key={item.id}
@@ -446,7 +494,7 @@ export default function OrdersPage() {
                     className={`card text-left hover:shadow-md transition-all p-3 group active:scale-95 ${inCart ? "ring-2 ring-terracotta" : ""}`}
                   >
                     <img
-                      src={item.image_url}
+                      src={item.imageUrl}
                       alt={item.name}
                       className="w-full h-24 object-cover rounded-lg mb-2 group-hover:scale-105 transition-transform duration-200"
                       onError={(e) => {
@@ -494,16 +542,12 @@ export default function OrdersPage() {
               <select
                 className="input-field"
                 value={selectedTable}
-                onChange={(e) =>
-                  setSelectedTable(
-                    e.target.value ? parseInt(e.target.value) : "",
-                  )
-                }
+                onChange={(e) => setSelectedTable(e.target.value)}
               >
                 <option value="">Chọn bàn...</option>
                 {tables.map((t) => (
                   <option key={t.id} value={t.id}>
-                    Bàn {t.number} ({t.status})
+                    {t.name} {t.code ? `(${t.code})` : ""}
                   </option>
                 ))}
               </select>
@@ -520,7 +564,7 @@ export default function OrdersPage() {
               <div className="flex-1 space-y-2 mb-4 max-h-64 overflow-y-auto">
                 {cart.map((item) => (
                   <div
-                    key={item.menu_item_id}
+                    key={item.menuItemId}
                     className="flex items-center gap-2"
                   >
                     <div className="flex-1 min-w-0">
@@ -533,7 +577,7 @@ export default function OrdersPage() {
                     </div>
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => updateCartQty(item.menu_item_id, -1)}
+                        onClick={() => updateCartQty(item.menuItemId, -1)}
                         className="w-6 h-6 rounded-full bg-cream-100 hover:bg-cream-200 flex items-center justify-center transition-colors"
                       >
                         <Minus size={11} />
@@ -542,7 +586,7 @@ export default function OrdersPage() {
                         {item.quantity}
                       </span>
                       <button
-                        onClick={() => updateCartQty(item.menu_item_id, 1)}
+                        onClick={() => updateCartQty(item.menuItemId, 1)}
                         className="w-6 h-6 rounded-full bg-cream-100 hover:bg-cream-200 flex items-center justify-center transition-colors"
                       >
                         <Plus size={11} />
