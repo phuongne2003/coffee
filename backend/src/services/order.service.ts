@@ -487,26 +487,20 @@ export const updateOrderStatus = async (
   return getOrderById(updatedOrderId);
 };
 
-export const cancelOrder = async (id: string) => {
+export const deleteOrder = async (id: string) => {
   const order = await Order.findById(id);
 
   if (!order) {
     throw new HttpError(404, "Không tìm thấy đơn hàng");
   }
 
-  if (order.status === "served" || order.status === "paid") {
-    throw new HttpError(400, "Không thể hủy đơn đã served hoặc paid");
-  }
+  await Order.deleteOne({ _id: order._id });
 
-  if (order.status === "cancelled") {
-    throw new HttpError(400, "Đơn hàng đã bị hủy");
-  }
-
-  order.status = "cancelled";
-  await order.save();
-
-  return getOrderById(order._id.toString());
+  return order;
 };
+
+// Backward compatibility for existing imports/route bindings.
+export const cancelOrder = deleteOrder;
 
 export const getMobileMenuByTableCode = async (tableCode: string) => {
   const table = await ensureTableByCode(tableCode);

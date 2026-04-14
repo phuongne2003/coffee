@@ -38,6 +38,6 @@ orderRouter.patch(
   validateBody(updateOrderStatusSchema),
   orderController.updateOrderStatus,
 );
-orderRouter.delete("/:id", orderController.cancelOrder);
+orderRouter.delete("/:id", orderController.deleteOrder);
 
 export default orderRouter;

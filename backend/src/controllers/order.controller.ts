@@ -125,8 +125,8 @@ export const updateOrderStatus = asyncHandler(
   },
 );
 
-export const cancelOrder = asyncHandler(async (req: Request, res: Response) => {
-  const order = await orderService.cancelOrder(getParamId(req));
-  emitOrderUpdate("order.cancelled", order);
-  return sendSuccess(res, 200, "Hủy đơn hàng thành công", order);
+export const deleteOrder = asyncHandler(async (req: Request, res: Response) => {
+  const order = await orderService.deleteOrder(getParamId(req));
+  emitOrderUpdate("order.deleted", order);
+  return sendSuccess(res, 200, "Xóa đơn hàng thành công", order);
 });
