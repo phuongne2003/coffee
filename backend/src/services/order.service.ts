@@ -117,6 +117,29 @@ const ensureTableByCode = async (
   return table;
 };
 
+const assertTableHasNoActiveOrder = async (
+  tableId: Types.ObjectId,
+  session?: ClientSession,
+  ignoreOrderId?: Types.ObjectId,
+) => {
+  const activeStatuses: OrderStatus[] = ["pending", "preparing", "served"];
+
+  const query = Order.findOne({
+    tableId,
+    status: { $in: activeStatuses },
+    ...(ignoreOrderId ? { _id: { $ne: ignoreOrderId } } : {}),
+  });
+
+  const activeOrder = session ? await query.session(session) : await query;
+
+  if (activeOrder) {
+    throw new HttpError(
+      409,
+      "Bàn này đang có đơn mở, không thể tạo thêm đơn mới",
+    );
+  }
+};
+
 const ensureCanMutateOrder = (status: OrderStatus) => {
   if (status === "served" || status === "paid" || status === "cancelled") {
     throw new HttpError(
@@ -274,6 +297,7 @@ export const createPosOrder = async (
 
   await session.withTransaction(async () => {
     const table = await ensureTableById(payload.tableId, session);
+    await assertTableHasNoActiveOrder(table._id, session);
     const { normalizedItems, totalAmount } = await normalizeOrderItems(
       payload.items,
       session,
@@ -418,6 +442,7 @@ export const updateOrderTable = async (
     ensureCanMutateOrder(order.status);
 
     const table = await ensureTableById(payload.tableId, session);
+    await assertTableHasNoActiveOrder(table._id, session, order._id);
     order.tableId = table._id;
 
     await order.save({ session });

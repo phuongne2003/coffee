@@ -881,6 +881,54 @@ const swaggerDefinition = {
         },
       },
     },
+    "/api/reports/summary": {
+      get: {
+        tags: ["Reports"],
+        summary: "Lấy báo cáo tổng quan",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "Báo cáo tổng quan" },
+          "401": { description: "Chưa được xác thực" },
+          "403": { description: "Không có quyền truy cập" },
+        },
+      },
+    },
+    "/api/reports/by-category": {
+      get: {
+        tags: ["Reports"],
+        summary: "Lấy báo cáo doanh thu theo danh mục",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "Báo cáo theo danh mục" },
+          "401": { description: "Chưa được xác thực" },
+          "403": { description: "Không có quyền truy cập" },
+        },
+      },
+    },
+    "/api/reports/trend": {
+      get: {
+        tags: ["Reports"],
+        summary: "Lấy báo cáo xu hướng doanh thu 7 ngày",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "Báo cáo xu hướng" },
+          "401": { description: "Chưa được xác thực" },
+          "403": { description: "Không có quyền truy cập" },
+        },
+      },
+    },
+    "/api/reports/inventory": {
+      get: {
+        tags: ["Reports"],
+        summary: "Lấy báo cáo tồn kho",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "Báo cáo tồn kho" },
+          "401": { description: "Chưa được xác thực" },
+          "403": { description: "Không có quyền truy cập" },
+        },
+      },
+    },
     "/api/ingredients": {
       get: {
         tags: ["Ingredients"],
