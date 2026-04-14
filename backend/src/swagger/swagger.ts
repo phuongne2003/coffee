@@ -18,6 +18,7 @@ const swaggerDefinition = {
     { name: "Auth", description: "Các endpoint xác thực" },
     { name: "Categories", description: "Quản lý danh mục món ăn" },
     { name: "Ingredients", description: "Quản lý nguyên liệu và tồn kho" },
+    { name: "MenuItems", description: "Quản lý món ăn" },
   ],
   components: {
     securitySchemes: {
@@ -119,6 +120,35 @@ const swaggerDefinition = {
               },
             },
           },
+        },
+      },
+      MenuItemRequest: {
+        type: "object",
+        required: ["name", "categoryId", "price"],
+        properties: {
+          name: { type: "string", example: "Cappuccino" },
+          categoryId: {
+            type: "string",
+            example: "6618f20d3d80dd8f0d7ce114",
+          },
+          price: { type: "number", example: 45000 },
+          description: {
+            type: "string",
+            example: "Espresso kết hợp sữa tươi và bọt sữa",
+          },
+          imageUrl: {
+            type: "string",
+            example: "https://example.com/images/cappuccino.jpg",
+          },
+          isAvailable: { type: "boolean", example: true },
+          isActive: { type: "boolean", example: true },
+        },
+      },
+      MenuItemAvailabilityRequest: {
+        type: "object",
+        required: ["isAvailable"],
+        properties: {
+          isAvailable: { type: "boolean", example: false },
         },
       },
     },
@@ -309,6 +339,132 @@ const swaggerDefinition = {
           "200": { description: "Cập nhật trạng thái danh mục thành công" },
           "403": { description: "Không có quyền truy cập" },
           "404": { description: "Không tìm thấy danh mục" },
+        },
+      },
+    },
+    "/api/menu-items": {
+      get: {
+        tags: ["MenuItems"],
+        summary: "Lấy danh sách món ăn",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "Danh sách món ăn" },
+          "401": { description: "Chưa được xác thực" },
+        },
+      },
+      post: {
+        tags: ["MenuItems"],
+        summary: "Tạo món ăn mới",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/MenuItemRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "Tạo món ăn thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Không tìm thấy danh mục" },
+          "409": { description: "Món ăn đã tồn tại" },
+        },
+      },
+    },
+    "/api/menu-items/{id}": {
+      get: {
+        tags: ["MenuItems"],
+        summary: "Lấy chi tiết món ăn",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": { description: "Chi tiết món ăn" },
+          "404": { description: "Không tìm thấy món ăn" },
+        },
+      },
+      patch: {
+        tags: ["MenuItems"],
+        summary: "Cập nhật món ăn",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/MenuItemRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Cập nhật món ăn thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Không tìm thấy món ăn hoặc danh mục" },
+          "409": { description: "Món ăn đã tồn tại" },
+        },
+      },
+      delete: {
+        tags: ["MenuItems"],
+        summary: "Xóa món ăn (soft delete)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": { description: "Xóa món ăn thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Không tìm thấy món ăn" },
+        },
+      },
+    },
+    "/api/menu-items/{id}/availability": {
+      patch: {
+        tags: ["MenuItems"],
+        summary: "Bật hoặc tắt trạng thái có bán của món ăn",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/MenuItemAvailabilityRequest",
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Cập nhật trạng thái bán của món ăn thành công",
+          },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Không tìm thấy món ăn" },
         },
       },
     },
