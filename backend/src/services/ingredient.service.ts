@@ -1,5 +1,6 @@
 import { ClientSession, Types } from "mongoose";
 import { Ingredient } from "../models/ingredient.model";
+import { MenuItem } from "../models/menu-item.model";
 import {
   InventoryTransaction,
   InventoryTransactionType,
@@ -100,8 +101,17 @@ export const deleteIngredient = async (id: string) => {
     throw new HttpError(404, "Không tìm thấy nguyên liệu");
   }
 
-  ingredient.isActive = false;
-  await ingredient.save();
+  const ingredientId = ingredient._id;
+
+  await Promise.all([
+    // Remove ingredient traces in menu recipes to avoid dangling references.
+    MenuItem.updateMany(
+      { "recipe.ingredientId": ingredientId },
+      { $pull: { recipe: { ingredientId } } },
+    ),
+    InventoryTransaction.deleteMany({ ingredientId }),
+    Ingredient.deleteOne({ _id: ingredientId }),
+  ]);
 
   return ingredient;
 };
@@ -126,7 +136,10 @@ export const listIngredients = async (params: {
   const page = params.page ?? 1;
   const limit = params.limit ?? 10;
   const skip = (page - 1) * limit;
-  const filter = buildSearchFilter(params);
+  const filter = buildSearchFilter({
+    ...params,
+    isActive: params.isActive ?? true,
+  });
 
   const [items, totalItems] = await Promise.all([
     Ingredient.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
