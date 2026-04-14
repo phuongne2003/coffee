@@ -1,0 +1,380 @@
+import { useEffect, useState } from 'react';
+import {
+  Plus,
+  Trash2,
+  ClipboardList,
+  ShoppingCart,
+  X,
+  Minus,
+  ChevronDown,
+  Search,
+} from 'lucide-react';
+import { ConfirmModal } from '../components/Modal';
+import EmptyState from '../components/EmptyState';
+import { SkeletonTable } from '../components/SkeletonLoader';
+import { StatusBadge } from '../components/Badge';
+import { useToast } from '../context/ToastContext';
+import { ordersApi, menuItemsApi, tablesApi, categoriesApi } from '../services/api';
+
+interface OrderItem { menu_item_id: number; name: string; quantity: number; price: number }
+interface Order { id: number; table_id: number; table_number: number; items: OrderItem[]; total: number; status: string; created_at: string }
+interface MenuItem { id: number; name: string; price: number; category_id: number; category: string; image_url: string; status: string }
+interface Table { id: number; number: number; capacity: number; status: string }
+interface Category { id: number; name: string }
+interface CartItem { menu_item_id: number; name: string; price: number; quantity: number }
+
+const STATUS_OPTIONS = ['pending', 'preparing', 'ready', 'completed', 'cancelled'];
+
+export default function OrdersPage() {
+  const { showToast } = useToast();
+  const [view, setView] = useState<'list' | 'pos'>('list');
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [tables, setTables] = useState<Table[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('');
+  const [search, setSearch] = useState('');
+
+  const [selectedTable, setSelectedTable] = useState<number | ''>('');
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [menuSearch, setMenuSearch] = useState('');
+  const [posSubmitting, setPosSubmitting] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [ordersData, menuData, tablesData, catData] = await Promise.all([
+        ordersApi.list(),
+        menuItemsApi.list(),
+        tablesApi.list(),
+        categoriesApi.list(),
+      ]);
+      setOrders(ordersData as Order[]);
+      setMenuItems(menuData as MenuItem[]);
+      setTables(tablesData as Table[]);
+      setCategories(catData as Category[]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleStatusChange = async (id: number, status: string) => {
+    try {
+      await ordersApi.updateStatus(id, status);
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+      showToast('Order status updated', 'success');
+    } catch (err) {
+      showToast((err as Error).message, 'error');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setSaving(true);
+    try {
+      await ordersApi.delete(deleteTarget.id);
+      showToast('Order deleted', 'success');
+      setDeleteTarget(null);
+      load();
+    } catch (err) {
+      showToast((err as Error).message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addToCart = (item: MenuItem) => {
+    setCart(prev => {
+      const existing = prev.find(c => c.menu_item_id === item.id);
+      if (existing) return prev.map(c => c.menu_item_id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
+      return [...prev, { menu_item_id: item.id, name: item.name, price: item.price, quantity: 1 }];
+    });
+  };
+
+  const updateCartQty = (id: number, delta: number) => {
+    setCart(prev => {
+      const updated = prev.map(c => c.menu_item_id === id ? { ...c, quantity: c.quantity + delta } : c);
+      return updated.filter(c => c.quantity > 0);
+    });
+  };
+
+  const cartTotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
+
+  const submitOrder = async () => {
+    if (!selectedTable) { showToast('Select a table first', 'warning'); return; }
+    if (cart.length === 0) { showToast('Add items to cart', 'warning'); return; }
+    setPosSubmitting(true);
+    try {
+      await ordersApi.create({
+        table_id: selectedTable as number,
+        items: cart.map(c => ({ menu_item_id: c.menu_item_id, quantity: c.quantity, price: c.price })),
+      });
+      showToast('Order placed successfully!', 'success');
+      setCart([]);
+      setSelectedTable('');
+      setView('list');
+      load();
+    } catch (err) {
+      showToast((err as Error).message, 'error');
+    } finally {
+      setPosSubmitting(false);
+    }
+  };
+
+  const filteredOrders = orders.filter(o => {
+    const matchStatus = !filterStatus || o.status === filterStatus;
+    const matchSearch = !search || String(o.id).includes(search) || String(o.table_number).includes(search);
+    return matchStatus && matchSearch;
+  });
+
+  const filteredMenu = menuItems.filter(m => {
+    const matchCat = !selectedCategory || String(m.category_id) === selectedCategory;
+    const matchSearch = m.name.toLowerCase().includes(menuSearch.toLowerCase());
+    return matchCat && matchSearch && m.status === 'available';
+  });
+
+  const formatTime = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' · ' + d.toLocaleDateString();
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="section-title">Orders</h1>
+          <p className="text-sm text-espresso-400">{orders.length} orders total</p>
+        </div>
+        <div className="flex gap-2">
+          <div className="flex gap-1 bg-cream-100 rounded-lg p-1 border border-cream-200">
+            <button
+              onClick={() => setView('list')}
+              className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${view === 'list' ? 'bg-white shadow-sm text-terracotta' : 'text-espresso-400'}`}
+            >
+              <span className="flex items-center gap-1.5"><ClipboardList size={14} />Orders</span>
+            </button>
+            <button
+              onClick={() => setView('pos')}
+              className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${view === 'pos' ? 'bg-white shadow-sm text-terracotta' : 'text-espresso-400'}`}
+            >
+              <span className="flex items-center gap-1.5"><Plus size={14} />New Order</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {view === 'list' ? (
+        <>
+          <div className="flex flex-wrap gap-3">
+            <div className="relative flex-1 min-w-[160px] max-w-xs">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-espresso-300" />
+              <input type="text" placeholder="Search by ID, table..." className="input-field pl-8 py-1.5" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <select className="input-field py-1.5 w-auto" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+              <option value="">All Statuses</option>
+              {STATUS_OPTIONS.map(s => <option key={s} value={s} className="capitalize">{s}</option>)}
+            </select>
+          </div>
+
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-cream-100 border-b border-cream-200">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">Order</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">Table</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">Items</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">Total</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">Time</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-espresso-400 uppercase tracking-wide">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <SkeletonTable rows={5} cols={7} />
+                ) : filteredOrders.length === 0 ? (
+                  <tr><td colSpan={7}>
+                    <EmptyState
+                      icon={<ClipboardList size={28} />}
+                      title="No orders found"
+                      description="Create a new order from the POS panel"
+                      action={<button onClick={() => setView('pos')} className="btn-primary"><Plus size={14} />New Order</button>}
+                    />
+                  </td></tr>
+                ) : (
+                  filteredOrders.map(order => (
+                    <tr key={order.id} className="table-row-stripe border-b border-cream-100">
+                      <td className="px-4 py-3 font-mono text-xs text-espresso-400">#{order.id}</td>
+                      <td className="px-4 py-3 font-semibold text-espresso">Table {order.table_number}</td>
+                      <td className="px-4 py-3 text-espresso-500 max-w-[180px]">
+                        <div className="truncate text-xs">{order.items.map(i => `${i.name}×${i.quantity}`).join(', ')}</div>
+                      </td>
+                      <td className="px-4 py-3 font-bold text-espresso">${order.total.toFixed(2)}</td>
+                      <td className="px-4 py-3">
+                        <div className="relative group inline-block">
+                          <button className="flex items-center gap-1">
+                            <StatusBadge status={order.status} />
+                            <ChevronDown size={12} className="text-espresso-400" />
+                          </button>
+                          <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-cream-200 py-1 z-10 min-w-[130px] hidden group-hover:block">
+                            {STATUS_OPTIONS.map(s => (
+                              <button
+                                key={s}
+                                onClick={() => handleStatusChange(order.id, s)}
+                                className={`block w-full text-left px-3 py-1.5 text-sm capitalize hover:bg-cream-100 ${order.status === s ? 'text-terracotta font-semibold' : 'text-espresso'}`}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-espresso-400 whitespace-nowrap">{formatTime(order.created_at)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end">
+                          <button onClick={() => setDeleteTarget(order)} className="btn-danger py-1 px-2"><Trash2 size={13} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 h-full">
+          <div className="lg:col-span-2 space-y-4">
+            <div className="flex flex-wrap gap-3">
+              <div className="relative flex-1 min-w-[160px]">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-espresso-300" />
+                <input type="text" placeholder="Search menu..." className="input-field pl-8 py-1.5" value={menuSearch} onChange={e => setMenuSearch(e.target.value)} />
+              </div>
+              <div className="flex gap-1.5 overflow-x-auto">
+                <button
+                  onClick={() => setSelectedCategory('')}
+                  className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${!selectedCategory ? 'bg-terracotta text-white' : 'bg-white border border-cream-200 text-espresso-500 hover:bg-cream-100'}`}
+                >
+                  All
+                </button>
+                {categories.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => setSelectedCategory(String(c.id))}
+                    className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${selectedCategory === String(c.id) ? 'bg-terracotta text-white' : 'bg-white border border-cream-200 text-espresso-500 hover:bg-cream-100'}`}
+                  >
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {filteredMenu.map(item => {
+                const inCart = cart.find(c => c.menu_item_id === item.id);
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => addToCart(item)}
+                    className={`card text-left hover:shadow-md transition-all p-3 group active:scale-95 ${inCart ? 'ring-2 ring-terracotta' : ''}`}
+                  >
+                    <img
+                      src={item.image_url}
+                      alt={item.name}
+                      className="w-full h-24 object-cover rounded-lg mb-2 group-hover:scale-105 transition-transform duration-200"
+                      onError={e => { (e.target as HTMLImageElement).src = 'https://images.pexels.com/photos/312418/pexels-photo-312418.jpeg?w=400'; }}
+                    />
+                    <p className="font-semibold text-espresso text-sm leading-tight">{item.name}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-terracotta font-bold text-sm">${item.price.toFixed(2)}</span>
+                      {inCart && <span className="text-xs bg-terracotta text-white rounded-full w-5 h-5 flex items-center justify-center font-bold">{inCart.quantity}</span>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="card p-4 flex flex-col h-fit lg:sticky lg:top-4">
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-cream-200">
+              <ShoppingCart size={18} className="text-terracotta" />
+              <h3 className="font-serif text-lg font-semibold text-espresso">Order Summary</h3>
+              {cart.length > 0 && (
+                <button onClick={() => setCart([])} className="ml-auto text-xs text-espresso-400 hover:text-red-500">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            <div className="mb-4">
+              <label className="label">Table</label>
+              <select className="input-field" value={selectedTable} onChange={e => setSelectedTable(e.target.value ? parseInt(e.target.value) : '')}>
+                <option value="">Select table...</option>
+                {tables.map(t => (
+                  <option key={t.id} value={t.id}>Table {t.number} ({t.status})</option>
+                ))}
+              </select>
+            </div>
+
+            {cart.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-8 text-center">
+                <ShoppingCart size={32} className="text-cream-300 mb-2" />
+                <p className="text-sm text-espresso-400">Click menu items to add them</p>
+              </div>
+            ) : (
+              <div className="flex-1 space-y-2 mb-4 max-h-64 overflow-y-auto">
+                {cart.map(item => (
+                  <div key={item.menu_item_id} className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-espresso truncate">{item.name}</p>
+                      <p className="text-xs text-espresso-400">${item.price.toFixed(2)} each</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => updateCartQty(item.menu_item_id, -1)} className="w-6 h-6 rounded-full bg-cream-100 hover:bg-cream-200 flex items-center justify-center transition-colors">
+                        <Minus size={11} />
+                      </button>
+                      <span className="w-6 text-center text-sm font-bold text-espresso">{item.quantity}</span>
+                      <button onClick={() => updateCartQty(item.menu_item_id, 1)} className="w-6 h-6 rounded-full bg-cream-100 hover:bg-cream-200 flex items-center justify-center transition-colors">
+                        <Plus size={11} />
+                      </button>
+                    </div>
+                    <p className="text-sm font-bold text-espresso w-14 text-right">${(item.price * item.quantity).toFixed(2)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="border-t border-cream-200 pt-3 space-y-3">
+              <div className="flex justify-between text-base font-bold text-espresso">
+                <span>Total</span>
+                <span className="font-serif text-lg">${cartTotal.toFixed(2)}</span>
+              </div>
+              <button
+                onClick={submitOrder}
+                disabled={posSubmitting || cart.length === 0 || !selectedTable}
+                className="w-full py-3 bg-terracotta hover:bg-terracotta-600 text-white font-semibold rounded-xl transition-all disabled:opacity-50 shadow-md hover:shadow-lg active:scale-95"
+              >
+                {posSubmitting ? 'Placing order...' : 'Place Order'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="Delete Order"
+        message={`Delete order #${deleteTarget?.id}? This action cannot be undone.`}
+        loading={saving}
+      />
+    </div>
+  );
+}
