@@ -158,39 +158,122 @@ export const categoriesApi = {
     }),
 };
 
+export type IngredientRecord = {
+  id: string;
+  name: string;
+  unit: string;
+  currentStock: number;
+  alertThreshold: number;
+  description?: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type BackendIngredientRecord = {
+  _id?: string;
+  id?: string;
+  name: string;
+  unit: string;
+  currentStock: number;
+  alertThreshold: number;
+  description?: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+const normalizeIngredient = (
+  item: BackendIngredientRecord,
+): IngredientRecord => ({
+  id: item.id ?? item._id ?? "",
+  name: item.name,
+  unit: item.unit,
+  currentStock: item.currentStock,
+  alertThreshold: item.alertThreshold,
+  description: item.description,
+  isActive: item.isActive,
+  createdAt: item.createdAt,
+  updatedAt: item.updatedAt,
+});
+
 export const ingredientsApi = {
-  list: () =>
-    tryRequest<typeof mockIngredients>(
+  list: (params?: {
+    search?: string;
+    isActive?: boolean;
+    lowStock?: boolean;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.set("search", params.search);
+    if (typeof params?.isActive === "boolean")
+      query.set("isActive", String(params.isActive));
+    if (typeof params?.lowStock === "boolean")
+      query.set("lowStock", String(params.lowStock));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+
+    return request<BackendIngredientRecord[]>(
       "GET",
-      "/ingredients",
-      undefined,
-      () => _mockIngredients,
+      `/ingredients${suffix}`,
+    ).then((items) => items.map(normalizeIngredient));
+  },
+  get: (id: string) =>
+    request<BackendIngredientRecord>("GET", `/ingredients/${id}`).then(
+      normalizeIngredient,
     ),
-  get: (id: number) =>
-    tryRequest("GET", `/ingredients/${id}`, undefined, () =>
-      _mockIngredients.find((i) => i.id === id),
+  create: (data: {
+    name: string;
+    unit: string;
+    currentStock: number;
+    alertThreshold: number;
+    description?: string;
+  }) =>
+    request<BackendIngredientRecord>("POST", "/ingredients", data).then(
+      normalizeIngredient,
     ),
-  create: (data: { name: string; unit: string; stock_quantity: number }) =>
-    tryRequest("POST", "/ingredients", data, () => {
-      const item = { id: _nextId++, ...data };
-      _mockIngredients.push(item);
-      return item;
-    }),
   update: (
-    id: number,
-    data: { name: string; unit: string; stock_quantity: number },
+    id: string,
+    data: Partial<{
+      name: string;
+      unit: string;
+      currentStock: number;
+      alertThreshold: number;
+      description?: string;
+      isActive: boolean;
+    }>,
   ) =>
-    tryRequest("PUT", `/ingredients/${id}`, data, () => {
-      _mockIngredients = _mockIngredients.map((i) =>
-        i.id === id ? { ...i, ...data } : i,
-      );
-      return _mockIngredients.find((i) => i.id === id);
-    }),
-  delete: (id: number) =>
-    tryRequest("DELETE", `/ingredients/${id}`, undefined, () => {
-      _mockIngredients = _mockIngredients.filter((i) => i.id !== id);
-      return { success: true };
-    }),
+    request<BackendIngredientRecord>("PATCH", `/ingredients/${id}`, data).then(
+      normalizeIngredient,
+    ),
+  delete: (id: string) =>
+    request<BackendIngredientRecord>("DELETE", `/ingredients/${id}`).then(
+      normalizeIngredient,
+    ),
+  updateStock: (
+    id: string,
+    data: {
+      type: "in" | "out" | "adjustment";
+      quantity: number;
+      note?: string;
+    },
+  ) =>
+    request<BackendIngredientRecord>(
+      "PATCH",
+      `/ingredients/${id}/stock`,
+      data,
+    ).then(normalizeIngredient),
+  lowStock: () =>
+    request<BackendIngredientRecord[]>(
+      "GET",
+      "/ingredients/alerts/low-stock",
+    ).then((items) => items.map(normalizeIngredient)),
+  movements: (id: string) =>
+    request<{
+      ingredient: BackendIngredientRecord;
+      movements: Array<Record<string, unknown>>;
+    }>("GET", `/ingredients/${id}/movements`).then((result) => ({
+      ...result,
+      ingredient: normalizeIngredient(result.ingredient),
+    })),
 };
 
 export const menuItemsApi = {

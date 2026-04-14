@@ -1,10 +1,10 @@
-import { useEffect, useState, FormEvent } from 'react';
-import { Plus, Pencil, Trash2, FolderOpen, Search } from 'lucide-react';
-import Modal, { ConfirmModal } from '../components/Modal';
-import EmptyState from '../components/EmptyState';
-import { SkeletonTable } from '../components/SkeletonLoader';
-import { useToast } from '../context/ToastContext';
-import { categoriesApi } from '../services/api';
+import { useEffect, useState, FormEvent } from "react";
+import { Plus, Pencil, Trash2, FolderOpen, Search } from "lucide-react";
+import Modal, { ConfirmModal } from "../components/Modal";
+import EmptyState from "../components/EmptyState";
+import { SkeletonTable } from "../components/SkeletonLoader";
+import { useToast } from "../context/ToastContext";
+import { categoriesApi } from "../services/api";
 
 interface Category {
   id: number;
@@ -21,11 +21,11 @@ export default function CategoriesPage() {
   const { showToast } = useToast();
   const [items, setItems] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
-  const [form, setForm] = useState<FormState>({ name: '', description: '' });
+  const [form, setForm] = useState<FormState>({ name: "", description: "" });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -39,11 +39,13 @@ export default function CategoriesPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ name: '', description: '' });
+    setForm({ name: "", description: "" });
     setFormErrors({});
     setModalOpen(true);
   };
@@ -57,27 +59,30 @@ export default function CategoriesPage() {
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!form.name.trim()) e.name = 'Name is required';
+    if (!form.name.trim()) e.name = "Tên danh mục là bắt buộc";
     return e;
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const errs = validate();
-    if (Object.keys(errs).length) { setFormErrors(errs); return; }
+    if (Object.keys(errs).length) {
+      setFormErrors(errs);
+      return;
+    }
     setSaving(true);
     try {
       if (editing) {
         await categoriesApi.update(editing.id, form);
-        showToast('Category updated', 'success');
+        showToast("Cập nhật danh mục thành công", "success");
       } else {
         await categoriesApi.create(form);
-        showToast('Category created', 'success');
+        showToast("Tạo danh mục thành công", "success");
       }
       setModalOpen(false);
       load();
     } catch (err) {
-      showToast((err as Error).message, 'error');
+      showToast((err as Error).message, "error");
     } finally {
       setSaving(false);
     }
@@ -88,43 +93,49 @@ export default function CategoriesPage() {
     setSaving(true);
     try {
       await categoriesApi.delete(deleteTarget.id);
-      showToast('Category deleted', 'success');
+      showToast("Xóa danh mục thành công", "success");
       setDeleteTarget(null);
       load();
     } catch (err) {
-      showToast((err as Error).message, 'error');
+      showToast((err as Error).message, "error");
     } finally {
       setSaving(false);
     }
   };
 
-  const filtered = items.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.description.toLowerCase().includes(search.toLowerCase())
+  const filtered = items.filter(
+    (c) =>
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.description.toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="section-title">Categories</h1>
-          <p className="text-sm text-espresso-400">{items.length} categories total</p>
+          <h1 className="section-title">Danh mục</h1>
+          <p className="text-sm text-espresso-400">
+            Tổng {items.length} danh mục
+          </p>
         </div>
         <button onClick={openAdd} className="btn-primary">
-          <Plus size={16} /> Add Category
+          <Plus size={16} /> Thêm danh mục
         </button>
       </div>
 
       <div className="card">
         <div className="px-4 py-3 border-b border-cream-200">
           <div className="relative max-w-sm">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-espresso-300" />
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-espresso-300"
+            />
             <input
               type="text"
-              placeholder="Search categories..."
+              placeholder="Tìm danh mục..."
               className="input-field pl-8 py-1.5"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
         </div>
@@ -133,10 +144,18 @@ export default function CategoriesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-cream-100 border-b border-cream-200">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">ID</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">Description</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-espresso-400 uppercase tracking-wide">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">
+                  ID
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">
+                  Tên
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">
+                  Mô tả
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-espresso-400 uppercase tracking-wide">
+                  Thao tác
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -147,24 +166,44 @@ export default function CategoriesPage() {
                   <td colSpan={4}>
                     <EmptyState
                       icon={<FolderOpen size={28} />}
-                      title="No categories yet"
-                      description="Start by adding your first menu category"
-                      action={<button onClick={openAdd} className="btn-primary"><Plus size={14} />Add Category</button>}
+                      title="Chưa có danh mục"
+                      description="Hãy tạo danh mục đầu tiên cho menu"
+                      action={
+                        <button onClick={openAdd} className="btn-primary">
+                          <Plus size={14} />
+                          Thêm danh mục
+                        </button>
+                      }
                     />
                   </td>
                 </tr>
               ) : (
-                filtered.map(cat => (
-                  <tr key={cat.id} className="table-row-stripe border-b border-cream-100">
-                    <td className="px-4 py-3 text-espresso-400 font-mono text-xs">#{cat.id}</td>
-                    <td className="px-4 py-3 font-semibold text-espresso">{cat.name}</td>
-                    <td className="px-4 py-3 text-espresso-500 max-w-xs truncate">{cat.description || '—'}</td>
+                filtered.map((cat) => (
+                  <tr
+                    key={cat.id}
+                    className="table-row-stripe border-b border-cream-100"
+                  >
+                    <td className="px-4 py-3 text-espresso-400 font-mono text-xs">
+                      #{cat.id}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-espresso">
+                      {cat.name}
+                    </td>
+                    <td className="px-4 py-3 text-espresso-500 max-w-xs truncate">
+                      {cat.description || "Chưa có mô tả"}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => openEdit(cat)} className="btn-ghost py-1 px-2">
+                        <button
+                          onClick={() => openEdit(cat)}
+                          className="btn-ghost py-1 px-2"
+                        >
                           <Pencil size={14} />
                         </button>
-                        <button onClick={() => setDeleteTarget(cat)} className="btn-danger py-1 px-2">
+                        <button
+                          onClick={() => setDeleteTarget(cat)}
+                          className="btn-danger py-1 px-2"
+                        >
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -180,34 +219,44 @@ export default function CategoriesPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? 'Edit Category' : 'Add Category'}
+        title={editing ? "Sửa danh mục" : "Thêm danh mục"}
         size="sm"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="label">Name *</label>
+            <label className="label">Tên danh mục *</label>
             <input
-              className={`input-field ${formErrors.name ? 'border-red-400' : ''}`}
-              placeholder="e.g. Hot Beverages"
+              className={`input-field ${formErrors.name ? "border-red-400" : ""}`}
+              placeholder="Ví dụ: Cà phê nóng"
               value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
-            {formErrors.name && <p className="text-red-500 text-xs mt-1">{formErrors.name}</p>}
+            {formErrors.name && (
+              <p className="text-red-500 text-xs mt-1">{formErrors.name}</p>
+            )}
           </div>
           <div>
-            <label className="label">Description</label>
+            <label className="label">Mô tả</label>
             <textarea
               className="input-field resize-none"
               rows={3}
-              placeholder="Brief description..."
+              placeholder="Mô tả ngắn..."
               value={form.description}
-              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, description: e.target.value }))
+              }
             />
           </div>
           <div className="flex gap-3 justify-end pt-2">
-            <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">Cancel</button>
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="btn-secondary"
+            >
+              Hủy
+            </button>
             <button type="submit" disabled={saving} className="btn-primary">
-              {saving ? 'Saving...' : editing ? 'Update' : 'Create'}
+              {saving ? "Đang lưu..." : editing ? "Cập nhật" : "Tạo mới"}
             </button>
           </div>
         </form>
@@ -217,8 +266,8 @@ export default function CategoriesPage() {
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
-        title="Delete Category"
-        message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
+        title="Xóa danh mục"
+        message={`Bạn có chắc muốn xóa "${deleteTarget?.name}"? Hành động này không thể hoàn tác.`}
         loading={saving}
       />
     </div>

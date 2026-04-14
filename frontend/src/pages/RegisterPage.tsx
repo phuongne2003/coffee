@@ -24,12 +24,14 @@ export default function RegisterPage() {
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!form.name.trim()) e.name = "Name is required";
-    if (!form.email) e.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = "Enter a valid email";
-    if (!form.password) e.password = "Password is required";
-    else if (form.password.length < 8) e.password = "At least 8 characters";
-    if (form.password !== form.confirm) e.confirm = "Passwords do not match";
+    if (!form.name.trim()) e.name = "Họ và tên là bắt buộc";
+    if (!form.email) e.email = "Email là bắt buộc";
+    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = "Email không hợp lệ";
+    if (!form.password) e.password = "Mật khẩu là bắt buộc";
+    else if (form.password.length < 8)
+      e.password = "Mật khẩu tối thiểu 8 ký tự";
+    if (form.password !== form.confirm)
+      e.confirm = "Mật khẩu nhập lại không khớp";
     return e;
   };
 
@@ -50,10 +52,10 @@ export default function RegisterPage() {
         role: "customer",
       });
       login(res.token, res.user);
-      showToast("Account created! Welcome.", "success");
+      showToast("Tạo tài khoản thành công", "success");
       navigate("/dashboard");
     } catch (err) {
-      showToast((err as Error).message || "Registration failed", "error");
+      showToast((err as Error).message || "Đăng ký thất bại", "error");
     } finally {
       setLoading(false);
     }
@@ -80,10 +82,10 @@ export default function RegisterPage() {
 
         <div className="card p-8">
           <h2 className="font-serif text-2xl font-semibold text-espresso mb-1">
-            Create account
+            Tạo tài khoản
           </h2>
           <p className="text-espresso-400 text-sm mb-6">
-            Join BrewDesk to manage your café
+            Tham gia BrewDesk để quản lý quán cà phê của bạn
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -112,11 +114,11 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="label">Password</label>
+              <label className="label">Mật khẩu</label>
               <div className="relative">
                 <input
                   type={showPw ? "text" : "password"}
-                  placeholder="Min. 6 characters"
+                  placeholder="Tối thiểu 8 ký tự"
                   {...field("password")}
                 />
                 <button
@@ -133,10 +135,10 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="label">Confirm Password</label>
+              <label className="label">Nhập lại mật khẩu</label>
               <input
                 type="password"
-                placeholder="Repeat password"
+                placeholder="Nhập lại mật khẩu"
                 {...field("confirm")}
               />
               {errors.confirm && (
@@ -149,17 +151,17 @@ export default function RegisterPage() {
               disabled={loading}
               className="w-full py-2.5 bg-terracotta hover:bg-terracotta-600 text-white font-medium rounded-xl transition-all disabled:opacity-60 shadow-md hover:shadow-lg mt-2"
             >
-              {loading ? "Creating account..." : "Create account"}
+              {loading ? "Đang tạo tài khoản..." : "Tạo tài khoản"}
             </button>
           </form>
 
           <p className="text-center text-sm text-espresso-400 mt-5">
-            Already have an account?{" "}
+            Đã có tài khoản?{" "}
             <Link
               to="/login"
               className="text-terracotta hover:text-terracotta-600 font-medium"
             >
-              Sign in
+              Đăng nhập
             </Link>
           </p>
         </div>
