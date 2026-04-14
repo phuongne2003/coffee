@@ -19,10 +19,11 @@ export default function LoginPage() {
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!form.email) e.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = "Enter a valid email";
-    if (!form.password) e.password = "Password is required";
-    else if (form.password.length < 8) e.password = "At least 8 characters";
+    if (!form.email) e.email = "Email là bắt buộc";
+    else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = "Email không hợp lệ";
+    if (!form.password) e.password = "Mật khẩu là bắt buộc";
+    else if (form.password.length < 8)
+      e.password = "Mật khẩu tối thiểu 8 ký tự";
     return e;
   };
 
@@ -38,10 +39,10 @@ export default function LoginPage() {
     try {
       const res = await authApi.login(form);
       login(res.token, res.user);
-      showToast("Welcome back!", "success");
+      showToast("Đăng nhập thành công", "success");
       navigate("/dashboard");
     } catch (err) {
-      showToast((err as Error).message || "Login failed", "error");
+      showToast((err as Error).message || "Đăng nhập thất bại", "error");
     } finally {
       setLoading(false);
     }
@@ -83,10 +84,10 @@ export default function LoginPage() {
           </div>
 
           <h2 className="font-serif text-3xl font-semibold text-espresso mb-1">
-            Welcome back
+            Chào mừng quay lại
           </h2>
           <p className="text-espresso-400 text-sm mb-8">
-            Sign in to your account to continue
+            Đăng nhập để tiếp tục sử dụng hệ thống
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -107,12 +108,12 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="label">Password</label>
+              <label className="label">Mật khẩu</label>
               <div className="relative">
                 <input
                   type={showPw ? "text" : "password"}
                   className={`input-field pr-10 ${errors.password ? "border-red-400 ring-1 ring-red-300" : ""}`}
-                  placeholder="At least 8 characters"
+                  placeholder="Tối thiểu 8 ký tự"
                   value={form.password}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, password: e.target.value }))
@@ -136,17 +137,17 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full py-2.5 bg-terracotta hover:bg-terracotta-600 text-white font-medium rounded-xl transition-all disabled:opacity-60 shadow-md hover:shadow-lg"
             >
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? "Đang đăng nhập..." : "Đăng nhập"}
             </button>
           </form>
 
           <p className="text-center text-sm text-espresso-400 mt-6">
-            Don't have an account?{" "}
+            Chưa có tài khoản?{" "}
             <Link
               to="/register"
               className="text-terracotta hover:text-terracotta-600 font-medium"
             >
-              Create one
+              Tạo tài khoản
             </Link>
           </p>
 
