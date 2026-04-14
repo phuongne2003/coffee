@@ -16,6 +16,7 @@ const swaggerDefinition = {
   ],
   tags: [
     { name: "Auth", description: "Các endpoint xác thực" },
+    { name: "Categories", description: "Quản lý danh mục món ăn" },
     { name: "Ingredients", description: "Quản lý nguyên liệu và tồn kho" },
   ],
   components: {
@@ -83,6 +84,43 @@ const swaggerDefinition = {
           note: { type: "string", example: "Nhập thêm từ nhà cung cấp" },
         },
       },
+      CategoryRequest: {
+        type: "object",
+        required: ["name"],
+        properties: {
+          name: { type: "string", example: "Coffee" },
+          description: {
+            type: "string",
+            example: "Các món cà phê nóng và lạnh",
+          },
+          isActive: { type: "boolean", example: true },
+          sortOrder: { type: "number", example: 1 },
+        },
+      },
+      CategoryToggleRequest: {
+        type: "object",
+        required: ["isActive"],
+        properties: {
+          isActive: { type: "boolean", example: false },
+        },
+      },
+      CategoryReorderRequest: {
+        type: "object",
+        required: ["items"],
+        properties: {
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["id", "sortOrder"],
+              properties: {
+                id: { type: "string", example: "6618f20d3d80dd8f0d7ce114" },
+                sortOrder: { type: "number", example: 2 },
+              },
+            },
+          },
+        },
+      },
     },
   },
   paths: {
@@ -130,6 +168,147 @@ const swaggerDefinition = {
         responses: {
           "200": { description: "Thông tin người dùng hiện tại" },
           "401": { description: "Chưa được xác thực" },
+        },
+      },
+    },
+    "/api/categories": {
+      get: {
+        tags: ["Categories"],
+        summary: "Lấy danh sách danh mục",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "Danh sách danh mục" },
+          "401": { description: "Chưa được xác thực" },
+        },
+      },
+      post: {
+        tags: ["Categories"],
+        summary: "Tạo danh mục mới",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CategoryRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "Tạo danh mục thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "409": { description: "Danh mục đã tồn tại" },
+        },
+      },
+    },
+    "/api/categories/reorder": {
+      patch: {
+        tags: ["Categories"],
+        summary: "Cập nhật thứ tự hiển thị danh mục",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CategoryReorderRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Cập nhật thứ tự thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Danh mục không tồn tại" },
+        },
+      },
+    },
+    "/api/categories/{id}": {
+      get: {
+        tags: ["Categories"],
+        summary: "Lấy chi tiết danh mục",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": { description: "Chi tiết danh mục" },
+          "404": { description: "Không tìm thấy danh mục" },
+        },
+      },
+      patch: {
+        tags: ["Categories"],
+        summary: "Cập nhật danh mục",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CategoryRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Cập nhật danh mục thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Không tìm thấy danh mục" },
+          "409": { description: "Tên danh mục đã tồn tại" },
+        },
+      },
+      delete: {
+        tags: ["Categories"],
+        summary: "Xóa danh mục (soft delete)",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": { description: "Xóa danh mục thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Không tìm thấy danh mục" },
+        },
+      },
+    },
+    "/api/categories/{id}/toggle": {
+      patch: {
+        tags: ["Categories"],
+        summary: "Bật hoặc tắt danh mục",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/CategoryToggleRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Cập nhật trạng thái danh mục thành công" },
+          "403": { description: "Không có quyền truy cập" },
+          "404": { description: "Không tìm thấy danh mục" },
         },
       },
     },
