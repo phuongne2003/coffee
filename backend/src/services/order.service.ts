@@ -174,14 +174,16 @@ const ensureTableAllowsMobileOrder = (table: {
   }
 };
 
-const ensureTableHasNoActiveOrder = async (
+const assertTableHasNoActiveOrder = async (
   tableId: Types.ObjectId,
-  tableCode: string,
   session?: ClientSession,
+  ignoreOrderId?: Types.ObjectId,
+  tableCode?: string,
 ) => {
   const query = Order.findOne({
     tableId,
     status: { $in: ACTIVE_ORDER_STATUSES },
+    ...(ignoreOrderId ? { _id: { $ne: ignoreOrderId } } : {}),
   }).sort({ createdAt: -1 });
 
   const activeOrder = session ? await query.session(session) : await query;
@@ -189,7 +191,9 @@ const ensureTableHasNoActiveOrder = async (
   if (activeOrder) {
     throw new HttpError(
       409,
-      `Bàn ${tableCode} đã có đơn, vui lòng chọn bàn khác`,
+      tableCode
+        ? `Bàn ${tableCode} đã có đơn, vui lòng chọn bàn khác`
+        : "Bàn này đang có đơn mở, không thể tạo thêm đơn mới",
     );
   }
 };
@@ -209,6 +213,7 @@ const syncTableStatus = async (
     tableId,
     status: { $in: ACTIVE_ORDER_STATUSES },
   });
+
   const activeOrder = session
     ? await activeOrderQuery.session(session)
     : await activeOrderQuery;
@@ -359,7 +364,8 @@ export const createMobileOrder = async (payload: CreateMobileOrderInput) => {
   await session.withTransaction(async () => {
     const table = await ensureTableByCode(payload.tableCode, session);
     ensureTableAllowsMobileOrder(table);
-    await ensureTableHasNoActiveOrder(table._id, table.code, session);
+    await assertTableHasNoActiveOrder(table._id, session, undefined, table.code);
+
     const { normalizedItems, totalAmount } = await normalizeOrderItems(
       payload.items,
       session,
@@ -404,6 +410,8 @@ export const createPosOrder = async (
 
   await session.withTransaction(async () => {
     const table = await ensureTableById(payload.tableId, session);
+    await assertTableHasNoActiveOrder(table._id, session);
+
     const { normalizedItems, totalAmount } = await normalizeOrderItems(
       payload.items,
       session,
@@ -553,7 +561,12 @@ export const updateOrderTable = async (
     const previousTableId = order.tableId;
     const table = await ensureTableById(payload.tableId, session);
 
-    await ensureTableHasNoActiveOrder(table._id, table.code, session);
+    await assertTableHasNoActiveOrder(
+      table._id,
+      session,
+      order._id,
+      table.code,
+    );
 
     order.tableId = table._id;
 
@@ -664,7 +677,7 @@ export const cancelOrder = deleteOrder;
 export const getMobileMenuByTableCode = async (tableCode: string) => {
   const table = await ensureTableByCode(tableCode);
   ensureTableAllowsMobileOrder(table);
-  await ensureTableHasNoActiveOrder(table._id, table.code);
+  await assertTableHasNoActiveOrder(table._id, undefined, undefined, table.code);
 
   const [categories, menuItems] = await Promise.all([
     Category.find({ isActive: true }).sort({ sortOrder: 1, createdAt: -1 }),

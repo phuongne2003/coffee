@@ -3,21 +3,26 @@ import { Ingredient } from "../models/ingredient.model";
 import { MenuItem } from "../models/menu-item.model";
 import { Order } from "../models/order.model";
 
-type TopItem = { name: string; count: number };
+export type ReportSummary = {
+  total_revenue: number;
+  total_orders: number;
+  avg_order_value: number;
+  top_items: { name: string; count: number }[];
+};
 
-type CategoryReportItem = {
+export type ReportCategoryItem = {
   category: string;
   revenue: number;
   count: number;
 };
 
-type TrendItem = {
+export type ReportTrendItem = {
   date: string;
   revenue: number;
   orders: number;
 };
 
-type InventoryItem = {
+export type ReportInventoryItem = {
   ingredient_id: string;
   name: string;
   stock: number;
@@ -25,176 +30,238 @@ type InventoryItem = {
   status: "ok" | "low" | "critical";
 };
 
-const dayLabel = (date: Date) =>
-  new Intl.DateTimeFormat("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-  }).format(date);
+const REPORT_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
+const DATE_LABEL_FORMAT = new Intl.DateTimeFormat("vi-VN", {
+  timeZone: REPORT_TIME_ZONE,
+  day: "2-digit",
+  month: "2-digit",
+});
+
+const DATE_KEY_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: REPORT_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+const toDateParts = (date: Date | string) => {
+  const parts = DATE_KEY_FORMAT.formatToParts(new Date(date));
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "00";
+  const day = parts.find((part) => part.type === "day")?.value ?? "00";
+
+  return { year, month, day };
+};
+
+const toDateKey = (date: Date | string) => {
+  const { year, month, day } = toDateParts(date);
+  return `${year}-${month}-${day}`;
+};
+
+const toDateLabel = (date: Date) => DATE_LABEL_FORMAT.format(date);
+
+const startOfToday = () => {
+  const now = new Date();
+  const { year, month, day } = toDateParts(now);
+  return new Date(`${year}-${month}-${day}T00:00:00+07:00`);
+};
+
+const createTrendWindow = (days = 7) => {
+  const today = startOfToday();
+  const window: { key: string; date: Date; label: string }[] = [];
+
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - offset);
+    window.push({
+      key: toDateKey(date),
+      date,
+      label: toDateLabel(date),
+    });
+  }
+
+  return window;
+};
 
 const getInventoryStatus = (
   stock: number,
   threshold: number,
 ): "ok" | "low" | "critical" => {
-  if (threshold <= 0) return "ok";
-  if (stock <= 0 || stock <= threshold / 2) return "critical";
-  if (stock <= threshold) return "low";
+  if (threshold <= 0) {
+    return "ok";
+  }
+
+  if (stock <= 0 || stock <= threshold / 2) {
+    return "critical";
+  }
+
+  if (stock <= threshold) {
+    return "low";
+  }
+
   return "ok";
 };
 
-export const getSummaryReport = async () => {
+export const getSummaryReport = async (): Promise<ReportSummary> => {
   const orders = await Order.find({ status: { $ne: "cancelled" } })
     .select("items totalAmount")
     .lean();
 
-  const total_orders = orders.length;
-  const total_revenue = Number(
-    orders.reduce((sum, order) => sum + (order.totalAmount ?? 0), 0).toFixed(2),
-  );
-  const avg_order_value = Number(
-    (total_orders > 0 ? total_revenue / total_orders : 0).toFixed(2),
+  const totalOrders = orders.length;
+  const totalRevenue = orders.reduce(
+    (sum, order) => sum + (order.totalAmount ?? 0),
+    0,
   );
 
-  const topMap = new Map<string, TopItem>();
+  const topItemsMap = new Map<string, number>();
+  const topItemNames = new Map<string, string>();
 
   for (const order of orders) {
     for (const item of order.items ?? []) {
-      const key = `${String(item.menuItemId)}:${item.name}`;
-      const current = topMap.get(key);
-      if (current) {
-        current.count += item.quantity ?? 0;
-      } else {
-        topMap.set(key, { name: item.name, count: item.quantity ?? 0 });
-      }
+      const key = String(item.menuItemId);
+      topItemNames.set(key, item.name);
+      topItemsMap.set(key, (topItemsMap.get(key) ?? 0) + (item.quantity ?? 0));
     }
   }
 
-  const top_items = Array.from(topMap.values())
+  const topItems = Array.from(topItemsMap.entries())
+    .map(([key, count]) => ({
+      name: topItemNames.get(key) ?? "Không rõ",
+      count,
+    }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 3);
 
   return {
-    total_revenue,
-    total_orders,
-    avg_order_value,
-    top_items,
+    total_revenue: Number(totalRevenue.toFixed(2)),
+    total_orders: totalOrders,
+    avg_order_value: Number(
+      (totalOrders > 0 ? totalRevenue / totalOrders : 0).toFixed(2),
+    ),
+    top_items: topItems,
   };
 };
 
-export const getCategoryReport = async (): Promise<CategoryReportItem[]> => {
+export const getCategoryReport = async (): Promise<ReportCategoryItem[]> => {
   const [categories, menuItems, orders] = await Promise.all([
-    Category.find({ isActive: true }).select("name").lean(),
-    MenuItem.find({ isActive: true }).select("_id categoryId").lean(),
+    Category.find({ isActive: true })
+      .sort({ sortOrder: 1, createdAt: -1 })
+      .lean(),
+    MenuItem.find({ isActive: true, isAvailable: true })
+      .select("_id categoryId")
+      .lean(),
     Order.find({ status: { $ne: "cancelled" } })
       .select("items")
       .lean(),
   ]);
 
-  const categoryById = new Map<string, string>();
-  categories.forEach((c) => categoryById.set(String(c._id), c.name));
+  const categoryNameMap = new Map<string, string>();
+  const categoryTotals = new Map<
+    string,
+    { category: string; revenue: number; count: number }
+  >();
 
-  const menuItemCategory = new Map<string, string>();
-  menuItems.forEach((m) =>
-    menuItemCategory.set(String(m._id), String(m.categoryId)),
-  );
-
-  const resultMap = new Map<string, CategoryReportItem>();
-
-  categories.forEach((c) => {
-    resultMap.set(String(c._id), {
-      category: c.name,
+  for (const category of categories) {
+    const categoryId = String(category._id);
+    categoryNameMap.set(categoryId, category.name);
+    categoryTotals.set(categoryId, {
+      category: category.name,
       revenue: 0,
       count: 0,
     });
-  });
+  }
+
+  const menuItemCategoryMap = new Map<string, string>();
+  for (const menuItem of menuItems) {
+    menuItemCategoryMap.set(String(menuItem._id), String(menuItem.categoryId));
+  }
 
   for (const order of orders) {
     for (const item of order.items ?? []) {
-      const catId = menuItemCategory.get(String(item.menuItemId));
-      if (!catId) continue;
+      const menuItemId = String(item.menuItemId);
+      const categoryId = menuItemCategoryMap.get(menuItemId);
 
-      const current = resultMap.get(catId) ?? {
-        category: categoryById.get(catId) ?? "Khác",
+      if (!categoryId) {
+        continue;
+      }
+
+      const current = categoryTotals.get(categoryId) ?? {
+        category: categoryNameMap.get(categoryId) ?? "Khác",
         revenue: 0,
         count: 0,
       };
 
       const lineTotal =
         item.lineTotal ?? (item.unitPrice ?? 0) * (item.quantity ?? 0);
+
       current.revenue += lineTotal;
       current.count += item.quantity ?? 0;
-      resultMap.set(catId, current);
+      categoryTotals.set(categoryId, current);
     }
   }
 
-  return Array.from(resultMap.values()).map((item) => ({
+  return Array.from(categoryTotals.values()).map((item) => ({
     ...item,
     revenue: Number(item.revenue.toFixed(2)),
   }));
 };
 
-export const getTrendReport = async (): Promise<TrendItem[]> => {
-  const now = new Date();
-  const days: Date[] = [];
+export const getTrendReport = async (): Promise<ReportTrendItem[]> => {
+  const trendWindow = createTrendWindow(7);
+  const orderBuckets = new Map<string, { revenue: number; orders: number }>();
 
-  for (let i = 6; i >= 0; i -= 1) {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - i);
-    days.push(d);
+  for (const item of trendWindow) {
+    orderBuckets.set(item.key, { revenue: 0, orders: 0 });
   }
 
-  const start = new Date(days[0]);
-  const end = new Date(now);
-
-  const orders = await Order.find({
-    status: { $ne: "cancelled" },
-    createdAt: { $gte: start, $lte: end },
-  })
-    .select("createdAt totalAmount")
+  const orders = await Order.find({ status: { $ne: "cancelled" } })
+    .select("totalAmount createdAt")
     .lean();
 
-  const buckets = new Map<string, { revenue: number; orders: number }>();
-  days.forEach((d) => {
-    buckets.set(d.toISOString().slice(0, 10), { revenue: 0, orders: 0 });
-  });
-
   for (const order of orders) {
-    const key = new Date(order.createdAt).toISOString().slice(0, 10);
-    const bucket = buckets.get(key);
-    if (!bucket) continue;
+    const key = toDateKey(order.createdAt);
+    const bucket = orderBuckets.get(key);
+
+    if (!bucket) {
+      continue;
+    }
+
     bucket.revenue += order.totalAmount ?? 0;
     bucket.orders += 1;
   }
 
-  return days.map((d) => {
-    const key = d.toISOString().slice(0, 10);
-    const bucket = buckets.get(key) ?? { revenue: 0, orders: 0 };
-
-    return {
-      date: dayLabel(d),
-      revenue: Number(bucket.revenue.toFixed(2)),
-      orders: bucket.orders,
-    };
-  });
+  return trendWindow.map((item) => ({
+    date: item.label,
+    revenue: Number((orderBuckets.get(item.key)?.revenue ?? 0).toFixed(2)),
+    orders: orderBuckets.get(item.key)?.orders ?? 0,
+  }));
 };
 
-export const getInventoryReport = async (): Promise<InventoryItem[]> => {
+export const getInventoryReport = async (): Promise<ReportInventoryItem[]> => {
   const ingredients = await Ingredient.find({ isActive: true })
-    .select("name currentStock alertThreshold")
+    .sort({ currentStock: 1, name: 1 })
     .lean();
 
   return ingredients
-    .map((i) => ({
-      ingredient_id: String(i._id),
-      name: i.name,
-      stock: i.currentStock,
-      threshold: i.alertThreshold,
-      status: getInventoryStatus(i.currentStock, i.alertThreshold),
+    .map((ingredient) => ({
+      ingredient_id: String(ingredient._id),
+      name: ingredient.name,
+      stock: ingredient.currentStock,
+      threshold: ingredient.alertThreshold,
+      status: getInventoryStatus(
+        ingredient.currentStock,
+        ingredient.alertThreshold,
+      ),
     }))
     .sort((a, b) => {
-      const weight = { critical: 0, low: 1, ok: 2 } as const;
-      const diff = weight[a.status] - weight[b.status];
-      if (diff !== 0) return diff;
+      const severityOrder = { critical: 0, low: 1, ok: 2 } as const;
+      const severityDiff = severityOrder[a.status] - severityOrder[b.status];
+
+      if (severityDiff !== 0) {
+        return severityDiff;
+      }
+
       return a.stock - b.stock;
     });
 };
