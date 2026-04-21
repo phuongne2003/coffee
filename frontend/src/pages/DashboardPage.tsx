@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   ResponsiveContainer,
   PieChart,
@@ -50,6 +51,7 @@ interface InventoryData {
 }
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [byCategory, setByCategory] = useState<CategoryData[]>([]);
   const [trend, setTrend] = useState<TrendData[]>([]);
@@ -117,6 +119,8 @@ export default function DashboardPage() {
     return "text-green-600 bg-green-50 border-green-200";
   };
 
+  const lowStockCount = inventory.filter((item) => item.status !== "ok").length;
+
   return (
     <div className="space-y-6">
       <div>
@@ -147,6 +151,29 @@ export default function DashboardPage() {
                 <p className="text-xs text-espresso-400 mt-1">{sub}</p>
               </div>
             ))}
+
+        {!loading && (
+          <button
+            type="button"
+            onClick={() => navigate("/ingredients?lowStock=true")}
+            className="card p-5 text-left hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                <AlertTriangle size={20} className="text-amber-600" />
+              </div>
+            </div>
+            <p className="text-xs font-semibold text-espresso-400 uppercase tracking-wide">
+              Nguyên liệu sắp hết
+            </p>
+            <p className="font-serif text-2xl font-bold text-espresso mt-1 leading-none">
+              {lowStockCount}
+            </p>
+            <p className="text-xs text-espresso-400 mt-1">
+              Nhấn để xem danh sách
+            </p>
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -6,6 +6,11 @@ import { createMobileOrderSchema } from "../validators/order.validator";
 const mobileOrderRouter = Router();
 
 mobileOrderRouter.get(
+  "/tables/available",
+  mobileOrderController.listMobileAvailableTables,
+);
+
+mobileOrderRouter.get(
   "/menu/:tableCode",
   mobileOrderController.getMobileMenuByTableCode,
 );

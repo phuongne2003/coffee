@@ -16,6 +16,19 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction,
 ): void => {
+  if (
+    err &&
+    typeof err === "object" &&
+    "type" in err &&
+    (err as { type?: unknown }).type === "entity.too.large"
+  ) {
+    res.status(413).json({
+      success: false,
+      message: "Dữ liệu gửi lên quá lớn. Vui lòng chọn ảnh nhỏ hơn.",
+    });
+    return;
+  }
+
   if (err instanceof HttpError) {
     res.status(err.statusCode).json({
       success: false,
@@ -30,6 +43,21 @@ export const errorHandler = (
       success: false,
       message: "Dữ liệu không hợp lệ",
       details: err.issues,
+    });
+    return;
+  }
+
+  if (
+    err &&
+    typeof err === "object" &&
+    "name" in err &&
+    (err as { name?: unknown }).name === "MongoServerError" &&
+    "code" in err &&
+    (err as { code?: unknown }).code === 11000
+  ) {
+    res.status(409).json({
+      success: false,
+      message: "Nguyên liệu đã tồn tại",
     });
     return;
   }

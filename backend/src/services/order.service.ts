@@ -692,3 +692,21 @@ export const getMobileMenuByTableCode = async (tableCode: string) => {
     categories: grouped,
   };
 };
+
+export const listMobileAvailableTables = async () => {
+  const [tables, activeOrders] = await Promise.all([
+    Table.find({ isActive: true, status: "available" })
+      .select("code name capacity status")
+      .sort({ code: 1 })
+      .lean(),
+    Order.find({ status: { $in: ACTIVE_ORDER_STATUSES } })
+      .select("tableId")
+      .lean(),
+  ]);
+
+  const busyTableIds = new Set(
+    activeOrders.map((order) => String(order.tableId)),
+  );
+
+  return tables.filter((table) => !busyTableIds.has(String(table._id)));
+};

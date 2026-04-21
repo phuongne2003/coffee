@@ -42,6 +42,11 @@ const buildSearchFilter = (query: {
   return filter;
 };
 
+const normalizeDescription = (description?: string) => {
+  const trimmed = description?.trim();
+  return trimmed ? trimmed : undefined;
+};
+
 export const createMenuItem = async (payload: CreateMenuItemInput) => {
   await ensureCategoryExists(payload.categoryId);
 
@@ -54,7 +59,10 @@ export const createMenuItem = async (payload: CreateMenuItemInput) => {
     throw new HttpError(409, "Món ăn đã tồn tại trong danh mục này");
   }
 
-  const menuItem = await MenuItem.create(payload);
+  const menuItem = await MenuItem.create({
+    ...payload,
+    description: normalizeDescription(payload.description),
+  });
 
   return menuItem;
 };
@@ -86,7 +94,14 @@ export const updateMenuItem = async (
     throw new HttpError(409, "Món ăn đã tồn tại trong danh mục này");
   }
 
-  Object.assign(menuItem, payload);
+  const { description, ...rest } = payload;
+
+  Object.assign(menuItem, rest);
+
+  if (description !== undefined) {
+    menuItem.description = normalizeDescription(description);
+  }
+
   await menuItem.save();
 
   return menuItem;

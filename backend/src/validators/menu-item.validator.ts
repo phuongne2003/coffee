@@ -21,9 +21,30 @@ export const createMenuItemSchema = z.object({
   name: z.string().trim().min(2, "Tên món phải có ít nhất 2 ký tự"),
   categoryId: z.string().regex(objectIdRegex, "Danh mục không hợp lệ"),
   recipe: recipeSchema.optional(),
-  price: z.coerce.number().min(0, "Giá không được âm"),
+  price: z.coerce.number().positive("Giá phải lớn hơn 0"),
   description: z.string().trim().max(500).optional(),
-  imageUrl: z.url("URL ảnh không hợp lệ").optional(),
+  imageUrl: z
+    .string()
+    .refine(
+      (value) => {
+        if (!value) {
+          return true;
+        }
+
+        if (value.startsWith("data:image/")) {
+          return /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value);
+        }
+
+        try {
+          new URL(value);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: "URL ảnh không hợp lệ" },
+    )
+    .optional(),
   isAvailable: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });

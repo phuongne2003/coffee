@@ -202,6 +202,10 @@ export const categoriesApi = {
     request<BackendCategoryRecord>("DELETE", `/categories/${id}`).then(
       normalizeCategory,
     ),
+  toggle: (id: string, isActive: boolean) =>
+    request<BackendCategoryRecord>("PATCH", `/categories/${id}/toggle`, {
+      isActive,
+    }).then(normalizeCategory),
 };
 
 export type IngredientRecord = {
@@ -248,6 +252,8 @@ export const ingredientsApi = {
     search?: string;
     isActive?: boolean;
     lowStock?: boolean;
+    page?: number;
+    limit?: number;
   }) => {
     const query = new URLSearchParams();
     if (params?.search) query.set("search", params.search);
@@ -255,6 +261,10 @@ export const ingredientsApi = {
       query.set("isActive", String(params.isActive));
     if (typeof params?.lowStock === "boolean")
       query.set("lowStock", String(params.lowStock));
+    if (typeof params?.page === "number")
+      query.set("page", String(params.page));
+    if (typeof params?.limit === "number")
+      query.set("limit", String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : "";
 
     return request<BackendIngredientRecord[]>(
@@ -850,9 +860,15 @@ const normalizeTable = (item: BackendTableRecord): TableRecord => {
       : item.status
         ? item.status !== "inactive"
         : true;
+  const status =
+    item.status === "occupied" || item.status === "available"
+      ? item.status
+      : isActive
+        ? "available"
+        : "unavailable";
 
-  // Generate menu URL for QR code
-  const menuUrl = `${window.location.origin}/menu/table-${code}`;
+  // QR must point to the exact table code expected by backend lookup.
+  const menuUrl = `${window.location.origin}/menu/${encodeURIComponent(code)}`;
 
   return {
     id,
@@ -861,7 +877,7 @@ const normalizeTable = (item: BackendTableRecord): TableRecord => {
     capacity: item.capacity ?? 0,
     isActive,
     number: Number.isNaN(parsedNumber) ? 0 : parsedNumber,
-    status: isActive ? "available" : "unavailable",
+    status,
     qr_code:
       item.qr_code ??
       `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(menuUrl)}&size=180x180`,
@@ -869,13 +885,29 @@ const normalizeTable = (item: BackendTableRecord): TableRecord => {
 };
 
 export const tablesApi = {
-  list: () =>
-    tryRequest<BackendTableRecord[]>(
+  list: (params?: { isActive?: boolean }) => {
+    const query = new URLSearchParams();
+    if (typeof params?.isActive === "boolean") {
+      query.set("isActive", String(params.isActive));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+
+    return tryRequest<BackendTableRecord[]>(
       "GET",
-      "/tables",
+      `/tables${suffix}`,
       undefined,
-      () => _mockTables as unknown as BackendTableRecord[],
-    ).then((items) => items.map(normalizeTable)),
+      () => {
+        const all = _mockTables as unknown as BackendTableRecord[];
+        if (typeof params?.isActive === "boolean") {
+          return all.filter(
+            (item) => (item.isActive ?? true) === params.isActive,
+          );
+        }
+
+        return all;
+      },
+    ).then((items) => items.map(normalizeTable));
+  },
   get: (id: string) =>
     tryRequest<BackendTableRecord>("GET", `/tables/${id}`, undefined, () =>
       (_mockTables as unknown as BackendTableRecord[]).find(
@@ -887,6 +919,7 @@ export const tablesApi = {
       code: `T${data.number}`,
       name: `Bàn ${data.number}`,
       capacity: data.capacity,
+      status: "available" as const,
     };
 
     return tryRequest<BackendTableRecord>("POST", "/tables", payload, () => {
@@ -895,6 +928,7 @@ export const tablesApi = {
         code: payload.code,
         name: payload.name,
         capacity: payload.capacity,
+        status: payload.status,
         isActive: true,
       };
       _mockTables.push(item as never);
@@ -909,6 +943,7 @@ export const tablesApi = {
       code: `T${data.number}`,
       name: `Bàn ${data.number}`,
       capacity: data.capacity,
+      status: data.status === "occupied" ? "occupied" : "available",
     };
 
     return tryRequest<BackendTableRecord>(
@@ -938,6 +973,21 @@ export const tablesApi = {
         isActive: false,
       };
     }).then(normalizeTable),
+  toggle: (id: string, isActive: boolean) =>
+    tryRequest<BackendTableRecord>(
+      "PATCH",
+      `/tables/${id}/toggle`,
+      { isActive },
+      () => {
+        _mockTables = (_mockTables as unknown as BackendTableRecord[]).map(
+          (t) => (String(t.id) === id ? { ...t, isActive } : t),
+        ) as never[];
+
+        return (_mockTables as unknown as BackendTableRecord[]).find(
+          (t) => String(t.id) === id,
+        ) as BackendTableRecord | undefined;
+      },
+    ).then(normalizeTable),
 };
 
 export const reportsApi = {

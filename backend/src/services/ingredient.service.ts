@@ -12,6 +12,30 @@ import {
 } from "../validators/ingredient.validator";
 import { HttpError } from "../utils/http-error";
 
+const STOCK_PRECISION = 1_000_000;
+
+const normalizeIngredientName = (name: string) =>
+  name.trim().replace(/\s+/g, " ");
+
+const escapeRegex = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const findIngredientByName = async (name: string, excludeId?: string) => {
+  const exactNamePattern = `^${escapeRegex(name)}$`;
+  const filter: Record<string, unknown> = {
+    name: { $regex: exactNamePattern, $options: "i" },
+  };
+
+  if (excludeId) {
+    filter._id = { $ne: excludeId };
+  }
+
+  return Ingredient.findOne(filter);
+};
+
+const roundStock = (value: number) =>
+  Math.round((value + Number.EPSILON) * STOCK_PRECISION) / STOCK_PRECISION;
+
 const buildSearchFilter = (query: {
   search?: string;
   isActive?: boolean;
@@ -59,13 +83,17 @@ const createMovement = async (
 };
 
 export const createIngredient = async (payload: CreateIngredientInput) => {
-  const existed = await Ingredient.findOne({ name: payload.name });
+  const normalizedName = normalizeIngredientName(payload.name);
+  const existed = await findIngredientByName(normalizedName);
 
   if (existed) {
     throw new HttpError(409, "Nguyên liệu đã tồn tại");
   }
 
-  const ingredient = await Ingredient.create(payload);
+  const ingredient = await Ingredient.create({
+    ...payload,
+    name: normalizedName,
+  });
 
   return ingredient;
 };
@@ -80,12 +108,15 @@ export const updateIngredient = async (
     throw new HttpError(404, "Không tìm thấy nguyên liệu");
   }
 
-  if (payload.name && payload.name !== ingredient.name) {
-    const existed = await Ingredient.findOne({ name: payload.name });
+  if (payload.name) {
+    const normalizedName = normalizeIngredientName(payload.name);
+    const existed = await findIngredientByName(normalizedName, id);
 
     if (existed) {
-      throw new HttpError(409, "Tên nguyên liệu đã tồn tại");
+      throw new HttpError(409, "Nguyên liệu đã tồn tại");
     }
+
+    payload.name = normalizedName;
   }
 
   Object.assign(ingredient, payload);
@@ -192,15 +223,15 @@ export const updateIngredientStock = async (
     let newStock = previousStock;
 
     if (payload.type === "in") {
-      newStock += payload.quantity;
+      newStock = roundStock(newStock + payload.quantity);
     }
 
     if (payload.type === "out") {
-      newStock -= payload.quantity;
+      newStock = roundStock(newStock - payload.quantity);
     }
 
     if (payload.type === "adjustment") {
-      newStock = payload.quantity;
+      newStock = roundStock(payload.quantity);
     }
 
     if (newStock < 0) {
