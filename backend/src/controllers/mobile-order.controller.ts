@@ -33,6 +33,18 @@ export const getMobileMenuByTableCode = asyncHandler(
   },
 );
 
+export const listMobileAvailableTables = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const result = await orderService.listMobileAvailableTables();
+    return sendSuccess(
+      res,
+      200,
+      "Lấy danh sách bàn khả dụng thành công",
+      result,
+    );
+  },
+);
+
 export const createMobileOrder = asyncHandler(
   async (req: Request, res: Response) => {
     const order = await orderService.createMobileOrder(req.body);

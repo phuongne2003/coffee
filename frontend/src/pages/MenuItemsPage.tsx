@@ -7,6 +7,8 @@ import {
   Search,
   LayoutGrid,
   List,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import Modal, { ConfirmModal } from "../components/Modal";
 import EmptyState from "../components/EmptyState";
@@ -51,6 +53,46 @@ interface FormState {
   ingredients: RecipeFormItem[];
 }
 
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+]);
+
+const isValidImageReference = (value: string) => {
+  if (!value) {
+    return true;
+  }
+
+  if (value.startsWith("data:image/")) {
+    return /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(value);
+  }
+
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Không đọc được ảnh"));
+    };
+    reader.onerror = () => reject(new Error("Không đọc được ảnh"));
+    reader.readAsDataURL(file);
+  });
+
 export default function MenuItemsPage() {
   const { showToast } = useToast();
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -74,6 +116,28 @@ export default function MenuItemsPage() {
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const toggleAvailability = async (item: MenuItem) => {
+    try {
+      setTogglingId(item.id);
+      const newStatus = !item.isAvailable;
+      await menuItemsApi.toggleAvailability(item.id, newStatus);
+      showToast(
+        newStatus ? "Đã bật hiển thị món" : "Đã tắt hiển thị món",
+        "success",
+      );
+      // Refresh items
+      await load();
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Lỗi thay đổi trạng thái",
+        "error",
+      );
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -82,7 +146,7 @@ export default function MenuItemsPage() {
         await Promise.allSettled([
           menuItemsApi.list({ isActive: true }),
           categoriesApi.list(),
-          ingredientsApi.list({ isActive: true }),
+          ingredientsApi.list({ isActive: true, limit: 1000 }),
         ]);
 
       if (menuResult.status === "fulfilled") {
@@ -174,9 +238,19 @@ export default function MenuItemsPage() {
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.name.trim()) e.name = "Tên món là bắt buộc";
-    const price = parseFloat(form.price);
-    if (isNaN(price) || price < 0) e.price = "Vui lòng nhập giá hợp lệ";
+    const normalizedPrice = form.price.trim().replace(",", ".");
+    const parsedPrice = Number(normalizedPrice);
+    if (!normalizedPrice) {
+      e.price = "Giá không được để trống";
+    } else if (Number.isNaN(parsedPrice)) {
+      e.price = "Giá phải là số";
+    } else {
+      if (parsedPrice <= 0) e.price = "Giá phải lớn hơn 0";
+    }
     if (!form.categoryId) e.categoryId = "Vui lòng chọn danh mục";
+    if (form.imageUrl && !isValidImageReference(form.imageUrl.trim())) {
+      e.imageUrl = "URL ảnh không hợp lệ";
+    }
     if (form.ingredients.length === 0) {
       e.recipe = "Vui lòng chọn ít nhất 1 nguyên liệu";
     }
@@ -200,8 +274,8 @@ export default function MenuItemsPage() {
     try {
       const payload = {
         name: form.name.trim(),
-        description: form.description.trim() || undefined,
-        price: parseFloat(form.price),
+        description: form.description.trim(),
+        price: Number(form.price.trim().replace(",", ".")),
         categoryId: form.categoryId,
         imageUrl: form.imageUrl.trim() || undefined,
         isAvailable: form.status === "available",
@@ -223,6 +297,48 @@ export default function MenuItemsPage() {
       showToast((err as Error).message, "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleImageFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      setFormErrors((current) => ({
+        ...current,
+        imageUrl: "Ảnh phải có định dạng jpg, png hoặc webp",
+      }));
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      setFormErrors((current) => ({
+        ...current,
+        imageUrl: "Ảnh phải nhỏ hơn hoặc bằng 5MB",
+      }));
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setForm((current) => ({ ...current, imageUrl: dataUrl }));
+      setFormErrors((current) => {
+        const next = { ...current };
+        delete next.imageUrl;
+        return next;
+      });
+    } catch (error) {
+      setFormErrors((current) => ({
+        ...current,
+        imageUrl: error instanceof Error ? error.message : "Không đọc được ảnh",
+      }));
     }
   };
 
@@ -350,14 +466,14 @@ export default function MenuItemsPage() {
               key={item.id}
               className="card group hover:shadow-md transition-shadow"
             >
-              <div className="relative overflow-hidden h-44">
+              <div className="relative overflow-hidden h-44 bg-cream-50 flex items-center justify-center">
                 <img
                   src={
                     item.imageUrl ||
                     "https://images.pexels.com/photos/312418/pexels-photo-312418.jpeg?w=400"
                   }
                   alt={item.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  className="w-full h-full object-contain object-center"
                   onError={(e) => {
                     (e.target as HTMLImageElement).src =
                       "https://images.pexels.com/photos/312418/pexels-photo-312418.jpeg?w=400";
@@ -377,7 +493,7 @@ export default function MenuItemsPage() {
                   {item.name}
                 </h3>
                 <p className="text-xs text-espresso-400 mb-3 line-clamp-2">
-                  {item.description}
+                  {item.description?.trim() || "Chưa có mô tả"}
                 </p>
                 <div className="mb-3 flex items-center justify-between text-xs text-espresso-400">
                   <span>
@@ -390,6 +506,26 @@ export default function MenuItemsPage() {
                     ${item.price.toFixed(2)}
                   </span>
                   <div className="flex gap-1">
+                    <button
+                      onClick={() => toggleAvailability(item)}
+                      disabled={togglingId === item.id}
+                      className={`py-1 px-2 rounded transition-colors ${
+                        item.isAvailable
+                          ? "text-terracotta hover:bg-terracotta-50"
+                          : "text-espresso-300 hover:bg-espresso-50"
+                      } ${
+                        togglingId === item.id
+                          ? "opacity-50 cursor-not-allowed"
+                          : "hover:bg-opacity-10"
+                      }`}
+                      title={item.isAvailable ? "Tắt hiển thị" : "Bật hiển thị"}
+                    >
+                      {item.isAvailable ? (
+                        <Eye size={13} />
+                      ) : (
+                        <EyeOff size={13} />
+                      )}
+                    </button>
                     <button
                       onClick={() => openEdit(item)}
                       className="btn-ghost py-1 px-2"
@@ -452,7 +588,7 @@ export default function MenuItemsPage() {
                           {item.name}
                         </p>
                         <p className="text-xs text-espresso-400 truncate max-w-[160px]">
-                          {item.description}
+                          {item.description?.trim() || "Chưa có mô tả"}
                         </p>
                         <p className="text-[11px] text-espresso-400 mt-1">
                           Tổng định lượng: {getTotalRecipeQuantity(item.recipe)}{" "}
@@ -474,6 +610,28 @@ export default function MenuItemsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => toggleAvailability(item)}
+                        disabled={togglingId === item.id}
+                        className={`py-1 px-2 rounded transition-colors ${
+                          item.isAvailable
+                            ? "text-terracotta hover:bg-terracotta-50"
+                            : "text-espresso-300 hover:bg-espresso-50"
+                        } ${
+                          togglingId === item.id
+                            ? "opacity-50 cursor-not-allowed"
+                            : "hover:bg-opacity-10"
+                        }`}
+                        title={
+                          item.isAvailable ? "Tắt hiển thị" : "Bật hiển thị"
+                        }
+                      >
+                        {item.isAvailable ? (
+                          <Eye size={14} />
+                        ) : (
+                          <EyeOff size={14} />
+                        )}
+                      </button>
                       <button
                         onClick={() => openEdit(item)}
                         className="btn-ghost py-1 px-2"
@@ -501,7 +659,7 @@ export default function MenuItemsPage() {
         title={editing ? "Sửa món" : "Thêm món"}
         size="lg"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="label">Tên món *</label>
@@ -520,15 +678,21 @@ export default function MenuItemsPage() {
             <div>
               <label className="label">Giá ($) *</label>
               <input
-                type="number"
-                step="0.01"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 className={`input-field ${formErrors.price ? "border-red-400" : ""}`}
                 placeholder="0.00"
                 value={form.price}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, price: e.target.value }))
-                }
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setForm((f) => ({ ...f, price: nextValue }));
+                  setFormErrors((current) => {
+                    if (!current.price) return current;
+                    const next = { ...current };
+                    delete next.price;
+                    return next;
+                  });
+                }}
               />
               {formErrors.price && (
                 <p className="text-red-500 text-xs mt-1">{formErrors.price}</p>
@@ -578,15 +742,56 @@ export default function MenuItemsPage() {
               />
             </div>
             <div className="col-span-2">
-              <label className="label">URL ảnh</label>
-              <input
-                className="input-field"
-                placeholder="https://..."
-                value={form.imageUrl}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, imageUrl: e.target.value }))
-                }
-              />
+              <label className="label">Ảnh món</label>
+              <div className="grid gap-3">
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  className="input-field file:mr-4 file:rounded-md file:border-0 file:bg-terracotta file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-terracotta-600"
+                  onChange={handleImageFileChange}
+                />
+                <input
+                  className={`input-field ${formErrors.imageUrl ? "border-red-400" : ""}`}
+                  placeholder="Hoặc dán URL ảnh"
+                  value={
+                    form.imageUrl.startsWith("data:image/") ? "" : form.imageUrl
+                  }
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, imageUrl: e.target.value }))
+                  }
+                />
+                {formErrors.imageUrl && (
+                  <p className="text-red-500 text-xs -mt-1">
+                    {formErrors.imageUrl}
+                  </p>
+                )}
+                {form.imageUrl && (
+                  <div className="flex items-start gap-3 rounded-lg border border-cream-200 bg-cream-50 p-3">
+                    <img
+                      src={form.imageUrl}
+                      alt="Xem trước ảnh món"
+                      className="h-16 w-16 rounded-md object-cover"
+                      onError={(event) => {
+                        (event.target as HTMLImageElement).src =
+                          "https://images.pexels.com/photos/312418/pexels-photo-312418.jpeg?w=400";
+                      }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-espresso">
+                        Ảnh xem trước
+                      </p>
+                      <p className="text-xs text-espresso-400 break-all">
+                        {form.imageUrl.startsWith("data:image/")
+                          ? "Ảnh đã được tải lên từ máy và lưu tạm dưới dạng dữ liệu ảnh"
+                          : form.imageUrl}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-espresso-400">
+                  Chấp nhận jpg, png, webp. Kích thước tối đa 5MB.
+                </p>
+              </div>
             </div>
             <div>
               <label className="label">Trạng thái</label>
@@ -645,7 +850,7 @@ export default function MenuItemsPage() {
               <p className="text-red-500 text-xs mt-1">{formErrors.recipe}</p>
             )}
           </div>
-          <div className="flex gap-3 justify-end pt-2">
+          <div className="sticky bottom-[-1.25rem] -mx-6 px-6 py-3 bg-white border-t border-cream-200 flex gap-3 justify-end">
             <button
               type="button"
               onClick={() => setModalOpen(false)}

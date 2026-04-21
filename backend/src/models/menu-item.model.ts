@@ -60,7 +60,6 @@ const menuItemSchema = new Schema<IMenuItem>(
     imageUrl: {
       type: String,
       trim: true,
-      maxlength: 1000,
     },
     isAvailable: {
       type: Boolean,

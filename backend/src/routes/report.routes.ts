@@ -8,9 +8,9 @@ const reportRouter = Router();
 reportRouter.use(authenticate);
 reportRouter.use(authorize("manager", "staff"));
 
-reportRouter.get("/summary", reportController.summary);
-reportRouter.get("/by-category", reportController.byCategory);
-reportRouter.get("/trend", reportController.trend);
-reportRouter.get("/inventory", reportController.inventory);
+reportRouter.get("/summary", reportController.getSummary);
+reportRouter.get("/by-category", reportController.getByCategory);
+reportRouter.get("/trend", reportController.getTrend);
+reportRouter.get("/inventory", reportController.getInventory);
 
 export default reportRouter;

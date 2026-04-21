@@ -31,11 +31,13 @@ export type ReportInventoryItem = {
 };
 
 const REPORT_TIME_ZONE = "Asia/Ho_Chi_Minh";
+
 const DATE_LABEL_FORMAT = new Intl.DateTimeFormat("vi-VN", {
   timeZone: REPORT_TIME_ZONE,
   day: "2-digit",
   month: "2-digit",
 });
+
 const DATE_KEY_FORMAT = new Intl.DateTimeFormat("en-CA", {
   timeZone: REPORT_TIME_ZONE,
   year: "numeric",
@@ -67,7 +69,7 @@ const startOfToday = () => {
 
 const createTrendWindow = (days = 7) => {
   const today = startOfToday();
-  const window = [] as { key: string; date: Date; label: string }[];
+  const window: { key: string; date: Date; label: string }[] = [];
 
   for (let offset = days - 1; offset >= 0; offset -= 1) {
     const date = new Date(today);
@@ -80,6 +82,25 @@ const createTrendWindow = (days = 7) => {
   }
 
   return window;
+};
+
+const getInventoryStatus = (
+  stock: number,
+  threshold: number,
+): "ok" | "low" | "critical" => {
+  if (threshold <= 0) {
+    return "ok";
+  }
+
+  if (stock <= 0 || stock <= threshold / 2) {
+    return "critical";
+  }
+
+  if (stock <= threshold) {
+    return "low";
+  }
+
+  return "ok";
 };
 
 export const getSummaryReport = async (): Promise<ReportSummary> => {
@@ -131,7 +152,7 @@ export const getCategoryReport = async (): Promise<ReportCategoryItem[]> => {
       .select("_id categoryId")
       .lean(),
     Order.find({ status: { $ne: "cancelled" } })
-      .select("items totalAmount")
+      .select("items")
       .lean(),
   ]);
 
@@ -171,13 +192,19 @@ export const getCategoryReport = async (): Promise<ReportCategoryItem[]> => {
         count: 0,
       };
 
-      current.revenue += item.lineTotal ?? item.unitPrice * item.quantity;
+      const lineTotal =
+        item.lineTotal ?? (item.unitPrice ?? 0) * (item.quantity ?? 0);
+
+      current.revenue += lineTotal;
       current.count += item.quantity ?? 0;
       categoryTotals.set(categoryId, current);
     }
   }
 
-  return Array.from(categoryTotals.values());
+  return Array.from(categoryTotals.values()).map((item) => ({
+    ...item,
+    revenue: Number(item.revenue.toFixed(2)),
+  }));
 };
 
 export const getTrendReport = async (): Promise<ReportTrendItem[]> => {
@@ -209,22 +236,6 @@ export const getTrendReport = async (): Promise<ReportTrendItem[]> => {
     revenue: Number((orderBuckets.get(item.key)?.revenue ?? 0).toFixed(2)),
     orders: orderBuckets.get(item.key)?.orders ?? 0,
   }));
-};
-
-const getInventoryStatus = (stock: number, threshold: number) => {
-  if (threshold <= 0) {
-    return "ok" as const;
-  }
-
-  if (stock <= 0 || stock <= threshold / 2) {
-    return "critical" as const;
-  }
-
-  if (stock <= threshold) {
-    return "low" as const;
-  }
-
-  return "ok" as const;
 };
 
 export const getInventoryReport = async (): Promise<ReportInventoryItem[]> => {

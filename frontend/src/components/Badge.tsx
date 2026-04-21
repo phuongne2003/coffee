@@ -42,7 +42,7 @@ const orderStatusLabel = (status: string) => {
     case "pending":
       return "Chờ xử lý";
     case "preparing":
-      return "Đang chuẩn bị";
+      return "Đang pha chế";
     case "served":
       return "Đã phục vụ";
     case "paid":

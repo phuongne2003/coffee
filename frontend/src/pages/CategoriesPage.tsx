@@ -101,6 +101,19 @@ export default function CategoriesPage() {
     }
   };
 
+  const handleToggle = async (cat: Category) => {
+    try {
+      await categoriesApi.toggle(cat.id, !cat.isActive);
+      showToast(
+        cat.isActive ? "Đã tắt danh mục" : "Đã bật danh mục",
+        "success",
+      );
+      load();
+    } catch (err) {
+      showToast((err as Error).message, "error");
+    }
+  };
+
   const filtered = items.filter(
     (c) =>
       c.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -149,6 +162,9 @@ export default function CategoriesPage() {
                   Tên
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">
+                  Trạng thái
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-espresso-400 uppercase tracking-wide">
                   Mô tả
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-espresso-400 uppercase tracking-wide">
@@ -158,10 +174,10 @@ export default function CategoriesPage() {
             </thead>
             <tbody>
               {loading ? (
-                <SkeletonTable rows={4} cols={4} />
+                <SkeletonTable rows={4} cols={5} />
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={4}>
+                  <td colSpan={5}>
                     <EmptyState
                       icon={<FolderOpen size={28} />}
                       title="Chưa có danh mục"
@@ -187,11 +203,32 @@ export default function CategoriesPage() {
                     <td className="px-4 py-3 font-semibold text-espresso">
                       {cat.name}
                     </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                          cat.isActive
+                            ? "bg-green-100 text-green-700 border-green-200"
+                            : "bg-gray-100 text-gray-600 border-gray-200"
+                        }`}
+                      >
+                        {cat.isActive ? "Đang bật" : "Đã tắt"}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-espresso-500 max-w-xs truncate">
                       {cat.description || "Chưa có mô tả"}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleToggle(cat)}
+                          className={`py-1 px-2 rounded text-xs font-medium transition-colors ${
+                            cat.isActive
+                              ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                              : "bg-green-100 text-green-700 hover:bg-green-200"
+                          }`}
+                        >
+                          {cat.isActive ? "Tắt" : "Bật"}
+                        </button>
                         <button
                           onClick={() => openEdit(cat)}
                           className="btn-ghost py-1 px-2"

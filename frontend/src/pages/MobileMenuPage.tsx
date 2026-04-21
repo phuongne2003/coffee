@@ -32,6 +32,13 @@ interface MenuData {
   items: MenuItem[];
 }
 
+interface AvailableTable {
+  _id: string;
+  code: string;
+  name: string;
+  capacity: number;
+}
+
 interface CartItem {
   menuItemId: string;
   name: string;
@@ -50,12 +57,47 @@ export default function MobileMenuPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [manualTableCode, setManualTableCode] = useState("");
+  const [availableTables, setAvailableTables] = useState<AvailableTable[]>([]);
+  const [loadingTables, setLoadingTables] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [search, setSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tableCode) {
+      return;
+    }
+
+    const fetchAvailableTables = async () => {
+      try {
+        setLoadingTables(true);
+        const response = await fetch(
+          "http://localhost:4000/api/mobile/tables/available",
+        );
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.message || "Không tải được danh sách bàn");
+        }
+
+        const tables = Array.isArray(data.data) ? data.data : [];
+        setAvailableTables(tables);
+      } catch (err) {
+        setAvailableTables([]);
+        showToast(
+          err instanceof Error ? err.message : "Không tải được danh sách bàn",
+          "error",
+        );
+      } finally {
+        setLoadingTables(false);
+      }
+    };
+
+    fetchAvailableTables();
+  }, [tableCode, showToast]);
 
   // Fetch menu data
   useEffect(() => {
@@ -285,6 +327,40 @@ export default function MobileMenuPage() {
             Nếu bạn đã quét QR thì hãy mở đúng mã bàn. Nếu chưa, hãy nhập mã bàn
             hoặc nhờ nhân viên hỗ trợ.
           </p>
+
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-espresso-500 mb-2">
+              Bàn đang trống
+            </p>
+            {loadingTables ? (
+              <p className="text-sm text-espresso-400">
+                Đang tải danh sách bàn...
+              </p>
+            ) : availableTables.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {availableTables.map((table) => (
+                  <button
+                    key={table._id}
+                    onClick={() =>
+                      navigate(`/menu/${encodeURIComponent(table.code)}`)
+                    }
+                    className="text-left rounded-xl border border-cream-200 px-3 py-2 hover:border-terracotta hover:bg-cream-50 transition-colors"
+                  >
+                    <p className="text-sm font-semibold text-espresso">
+                      {table.name}
+                    </p>
+                    <p className="text-xs text-espresso-400">
+                      {table.capacity} chỗ
+                    </p>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-espresso-400">
+                Hiện chưa có bàn trống.
+              </p>
+            )}
+          </div>
 
           <div className="space-y-3">
             <div>
