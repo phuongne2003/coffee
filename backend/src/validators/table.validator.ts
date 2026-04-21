@@ -13,6 +13,7 @@ export const createTableSchema = z.object({
     .int()
     .min(1, "Sức chứa tối thiểu là 1")
     .default(4),
+  status: z.enum(["available", "occupied"]).optional(),
   isActive: z.boolean().optional(),
 });
 

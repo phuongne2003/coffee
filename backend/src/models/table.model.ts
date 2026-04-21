@@ -4,6 +4,7 @@ export interface ITable {
   code: string;
   name: string;
   capacity: number;
+  status: "available" | "occupied";
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -32,6 +33,11 @@ const tableSchema = new Schema<ITable>(
       required: true,
       min: 1,
       default: 4,
+    },
+    status: {
+      type: String,
+      enum: ["available", "occupied"],
+      default: "available",
     },
     isActive: {
       type: Boolean,

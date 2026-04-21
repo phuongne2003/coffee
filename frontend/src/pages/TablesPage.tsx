@@ -11,6 +11,7 @@ interface Table {
   number: number;
   capacity: number;
   status: string;
+  isActive: boolean;
   qr_code: string;
 }
 
@@ -35,20 +36,33 @@ export default function TablesPage() {
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [visibilityFilter, setVisibilityFilter] = useState<
+    "active" | "inactive"
+  >("active");
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (showLoader = true) => {
+    if (showLoader) setLoading(true);
     try {
-      const data = await tablesApi.list();
+      const data = await tablesApi.list({
+        isActive: visibilityFilter === "inactive" ? false : true,
+      });
       setTables(data as Table[]);
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   useEffect(() => {
     load();
-  }, []);
+  }, [visibilityFilter]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      load(false);
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [visibilityFilter]);
 
   const openAdd = () => {
     setEditing(null);
@@ -126,6 +140,16 @@ export default function TablesPage() {
     }
   };
 
+  const handleToggleActive = async (table: Table) => {
+    try {
+      await tablesApi.toggle(table.id, !table.isActive);
+      showToast(table.isActive ? "Đã tắt bàn" : "Đã bật bàn", "success");
+      load();
+    } catch (err) {
+      showToast((err as Error).message, "error");
+    }
+  };
+
   const available = tables.filter((t) => t.status === "available").length;
   const occupied = tables.filter((t) => t.status === "occupied").length;
 
@@ -143,9 +167,33 @@ export default function TablesPage() {
             </span>
           </div>
         </div>
-        <button onClick={openAdd} className="btn-primary">
-          <Plus size={16} /> Thêm bàn
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 bg-cream-100 rounded-lg p-1 border border-cream-200">
+            <button
+              onClick={() => setVisibilityFilter("active")}
+              className={`px-3 py-1 text-xs rounded-md ${
+                visibilityFilter === "active"
+                  ? "bg-white text-terracotta shadow-sm"
+                  : "text-espresso-500"
+              }`}
+            >
+              Đang bật
+            </button>
+            <button
+              onClick={() => setVisibilityFilter("inactive")}
+              className={`px-3 py-1 text-xs rounded-md ${
+                visibilityFilter === "inactive"
+                  ? "bg-white text-terracotta shadow-sm"
+                  : "text-espresso-500"
+              }`}
+            >
+              Đã tắt
+            </button>
+          </div>
+          <button onClick={openAdd} className="btn-primary">
+            <Plus size={16} /> Thêm bàn
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -202,6 +250,9 @@ export default function TablesPage() {
                   </span>
                 </div>
                 <AvailabilityBadge status={table.status} />
+                {!table.isActive && (
+                  <p className="text-[11px] text-gray-500 mt-1">Đã tắt</p>
+                )}
               </div>
               <div className="flex items-center justify-center gap-1 text-xs text-espresso-400 mb-3">
                 <Users size={12} />
@@ -217,6 +268,16 @@ export default function TablesPage() {
                     <QrCode size={13} />
                   </button>
                 )}
+                <button
+                  onClick={() => handleToggleActive(table)}
+                  className={`flex-1 py-1 text-xs rounded transition-colors ${
+                    table.isActive
+                      ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                      : "bg-green-100 text-green-700 hover:bg-green-200"
+                  }`}
+                >
+                  {table.isActive ? "Tắt" : "Bật"}
+                </button>
                 <button
                   onClick={() => openEdit(table)}
                   className="flex-1 btn-ghost py-1 text-xs justify-center"

@@ -23,6 +23,51 @@ const orderStatusTransitions: Record<OrderStatus, OrderStatus[]> = {
   cancelled: [],
 };
 
+const ACTIVE_ORDER_STATUSES: OrderStatus[] = ["pending", "preparing", "served"];
+const STOCK_PRECISION = 1_000_000;
+
+const roundStock = (value: number) =>
+  Math.round((value + Number.EPSILON) * STOCK_PRECISION) / STOCK_PRECISION;
+
+const formatQuantity = (value: number) => {
+  if (!Number.isFinite(value)) return String(value);
+  const rounded = roundStock(value);
+  return Number.isInteger(rounded)
+    ? String(rounded)
+    : rounded
+        .toFixed(4)
+        .replace(/\.0+$/, "")
+        .replace(/(\.\d*?)0+$/, "$1");
+};
+
+const normalizeIngredientId = (raw: unknown): string | null => {
+  if (raw instanceof Types.ObjectId) {
+    return raw.toString();
+  }
+
+  if (typeof raw === "string" && Types.ObjectId.isValid(raw)) {
+    return raw;
+  }
+
+  if (
+    raw &&
+    typeof raw === "object" &&
+    "_id" in (raw as Record<string, unknown>)
+  ) {
+    const nested = (raw as { _id?: unknown })._id;
+
+    if (nested instanceof Types.ObjectId) {
+      return nested.toString();
+    }
+
+    if (typeof nested === "string" && Types.ObjectId.isValid(nested)) {
+      return nested;
+    }
+  }
+
+  return null;
+};
+
 type NormalizedOrderItem = {
   menuItemId: Types.ObjectId;
   name: string;
@@ -117,27 +162,66 @@ const ensureTableByCode = async (
   return table;
 };
 
+const ensureTableAllowsMobileOrder = (table: {
+  code: string;
+  status?: "available" | "occupied";
+}) => {
+  if (table.status === "occupied") {
+    throw new HttpError(
+      409,
+      `Bàn ${table.code} đang phục vụ, vui lòng chọn bàn khác`,
+    );
+  }
+};
+
 const assertTableHasNoActiveOrder = async (
   tableId: Types.ObjectId,
   session?: ClientSession,
   ignoreOrderId?: Types.ObjectId,
+  tableCode?: string,
 ) => {
-  const activeStatuses: OrderStatus[] = ["pending", "preparing", "served"];
-
   const query = Order.findOne({
     tableId,
-    status: { $in: activeStatuses },
+    status: { $in: ACTIVE_ORDER_STATUSES },
     ...(ignoreOrderId ? { _id: { $ne: ignoreOrderId } } : {}),
-  });
+  }).sort({ createdAt: -1 });
 
   const activeOrder = session ? await query.session(session) : await query;
 
   if (activeOrder) {
     throw new HttpError(
       409,
-      "Bàn này đang có đơn mở, không thể tạo thêm đơn mới",
+      tableCode
+        ? `Bàn ${tableCode} đã có đơn, vui lòng chọn bàn khác`
+        : "Bàn này đang có đơn mở, không thể tạo thêm đơn mới",
     );
   }
+};
+
+const syncTableStatus = async (
+  tableId: Types.ObjectId,
+  session?: ClientSession,
+) => {
+  const tableQuery = Table.findById(tableId);
+  const table = session ? await tableQuery.session(session) : await tableQuery;
+
+  if (!table) {
+    throw new HttpError(404, "Không tìm thấy bàn");
+  }
+
+  const activeOrderQuery = Order.findOne({
+    tableId,
+    status: { $in: ACTIVE_ORDER_STATUSES },
+  });
+
+  const activeOrder = session
+    ? await activeOrderQuery.session(session)
+    : await activeOrderQuery;
+
+  table.status = activeOrder ? "occupied" : "available";
+  await table.save(session ? { session } : undefined);
+
+  return table;
 };
 
 const ensureCanMutateOrder = (status: OrderStatus) => {
@@ -182,7 +266,22 @@ const deductIngredientsForOrder = async (
     }
 
     for (const recipeItem of menuItem.recipe) {
-      const key = String(recipeItem.ingredientId);
+      const key = normalizeIngredientId(recipeItem.ingredientId);
+
+      if (!key) {
+        throw new HttpError(
+          400,
+          `Công thức món ${orderItem.name} có nguyên liệu không hợp lệ`,
+        );
+      }
+
+      if (!Number.isFinite(recipeItem.quantity) || recipeItem.quantity <= 0) {
+        throw new HttpError(
+          400,
+          `Công thức món ${orderItem.name} có định lượng nguyên liệu không hợp lệ`,
+        );
+      }
+
       const current = requiredByIngredient.get(key) ?? 0;
       requiredByIngredient.set(
         key,
@@ -191,7 +290,9 @@ const deductIngredientsForOrder = async (
     }
   }
 
-  const ingredientIds = Array.from(requiredByIngredient.keys());
+  const ingredientIds = Array.from(requiredByIngredient.keys()).map(
+    (id) => new Types.ObjectId(id),
+  );
   const ingredients = await Ingredient.find({ _id: { $in: ingredientIds } })
     .session(session)
     .sort({ createdAt: 1 });
@@ -213,11 +314,14 @@ const deductIngredientsForOrder = async (
 
     const requiredQuantity =
       requiredByIngredient.get(String(ingredient._id)) ?? 0;
+    const remainingStock = roundStock(
+      ingredient.currentStock - requiredQuantity,
+    );
 
-    if (ingredient.currentStock < requiredQuantity) {
+    if (remainingStock < 0) {
       throw new HttpError(
         400,
-        `Không đủ tồn kho cho nguyên liệu ${ingredient.name}`,
+        `Nguyên liệu ${ingredient.name} không đủ (cần ${formatQuantity(requiredQuantity)}${ingredient.unit}, còn ${formatQuantity(ingredient.currentStock)}${ingredient.unit})`,
       );
     }
   }
@@ -228,7 +332,7 @@ const deductIngredientsForOrder = async (
     const requiredQuantity =
       requiredByIngredient.get(String(ingredient._id)) ?? 0;
     const previousStock = ingredient.currentStock;
-    const newStock = previousStock - requiredQuantity;
+    const newStock = roundStock(previousStock - requiredQuantity);
 
     ingredient.currentStock = newStock;
     await ingredient.save({ session });
@@ -246,7 +350,10 @@ const deductIngredientsForOrder = async (
   }
 
   if (transactions.length > 0) {
-    await InventoryTransaction.create(transactions, { session });
+    await InventoryTransaction.create(transactions, {
+      session,
+      ordered: true,
+    });
   }
 };
 
@@ -256,6 +363,9 @@ export const createMobileOrder = async (payload: CreateMobileOrderInput) => {
 
   await session.withTransaction(async () => {
     const table = await ensureTableByCode(payload.tableCode, session);
+    ensureTableAllowsMobileOrder(table);
+    await assertTableHasNoActiveOrder(table._id, session, undefined, table.code);
+
     const { normalizedItems, totalAmount } = await normalizeOrderItems(
       payload.items,
       session,
@@ -275,6 +385,9 @@ export const createMobileOrder = async (payload: CreateMobileOrderInput) => {
       ],
       { session },
     );
+
+    table.status = "occupied";
+    await table.save({ session });
 
     createdOrderId = created[0]._id.toString();
   });
@@ -298,6 +411,7 @@ export const createPosOrder = async (
   await session.withTransaction(async () => {
     const table = await ensureTableById(payload.tableId, session);
     await assertTableHasNoActiveOrder(table._id, session);
+
     const { normalizedItems, totalAmount } = await normalizeOrderItems(
       payload.items,
       session,
@@ -318,6 +432,9 @@ export const createPosOrder = async (
       ],
       { session },
     );
+
+    table.status = "occupied";
+    await table.save({ session });
 
     createdOrderId = created[0]._id.toString();
   });
@@ -441,11 +558,23 @@ export const updateOrderTable = async (
 
     ensureCanMutateOrder(order.status);
 
+    const previousTableId = order.tableId;
     const table = await ensureTableById(payload.tableId, session);
-    await assertTableHasNoActiveOrder(table._id, session, order._id);
+
+    await assertTableHasNoActiveOrder(
+      table._id,
+      session,
+      order._id,
+      table.code,
+    );
+
     order.tableId = table._id;
 
     await order.save({ session });
+
+    await syncTableStatus(previousTableId, session);
+    await syncTableStatus(table._id, session);
+
     updatedOrderId = order._id.toString();
   });
 
@@ -489,9 +618,8 @@ export const updateOrderStatus = async (
       );
     }
 
-    if (payload.status === "served") {
+    if (payload.status === "preparing") {
       await deductIngredientsForOrder(order._id.toString(), session, context);
-      order.servedAt = new Date();
     }
 
     if (payload.status === "paid") {
@@ -500,6 +628,9 @@ export const updateOrderStatus = async (
 
     order.status = payload.status;
     await order.save({ session });
+
+    await syncTableStatus(order.tableId, session);
+
     updatedOrderId = order._id.toString();
   });
 
@@ -513,15 +644,31 @@ export const updateOrderStatus = async (
 };
 
 export const deleteOrder = async (id: string) => {
-  const order = await Order.findById(id);
+  const session = await Order.startSession();
+  let deletedOrder: any = null;
 
-  if (!order) {
-    throw new HttpError(404, "Không tìm thấy đơn hàng");
+  await session.withTransaction(async () => {
+    const order = await Order.findById(id).session(session);
+
+    if (!order) {
+      throw new HttpError(404, "Không tìm thấy đơn hàng");
+    }
+
+    const tableId = order.tableId;
+
+    await Order.deleteOne({ _id: order._id }).session(session);
+    await syncTableStatus(tableId, session);
+
+    deletedOrder = order;
+  });
+
+  await session.endSession();
+
+  if (!deletedOrder) {
+    throw new HttpError(500, "Không thể xóa đơn hàng");
   }
 
-  await Order.deleteOne({ _id: order._id });
-
-  return order;
+  return deletedOrder;
 };
 
 // Backward compatibility for existing imports/route bindings.
@@ -529,6 +676,8 @@ export const cancelOrder = deleteOrder;
 
 export const getMobileMenuByTableCode = async (tableCode: string) => {
   const table = await ensureTableByCode(tableCode);
+  ensureTableAllowsMobileOrder(table);
+  await assertTableHasNoActiveOrder(table._id, undefined, undefined, table.code);
 
   const [categories, menuItems] = await Promise.all([
     Category.find({ isActive: true }).sort({ sortOrder: 1, createdAt: -1 }),
