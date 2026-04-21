@@ -41,7 +41,7 @@ interface CartItem {
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   pending: "Chờ xử lý",
-  preparing: "Đang chuẩn bị",
+  preparing: "Đang pha chế",
   served: "Đã phục vụ",
   paid: "Đã thanh toán",
   cancelled: "Đã hủy",
