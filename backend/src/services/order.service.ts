@@ -364,7 +364,12 @@ export const createMobileOrder = async (payload: CreateMobileOrderInput) => {
   await session.withTransaction(async () => {
     const table = await ensureTableByCode(payload.tableCode, session);
     ensureTableAllowsMobileOrder(table);
-    await assertTableHasNoActiveOrder(table._id, session, undefined, table.code);
+    await assertTableHasNoActiveOrder(
+      table._id,
+      session,
+      undefined,
+      table.code,
+    );
 
     const { normalizedItems, totalAmount } = await normalizeOrderItems(
       payload.items,
@@ -677,7 +682,12 @@ export const cancelOrder = deleteOrder;
 export const getMobileMenuByTableCode = async (tableCode: string) => {
   const table = await ensureTableByCode(tableCode);
   ensureTableAllowsMobileOrder(table);
-  await assertTableHasNoActiveOrder(table._id, undefined, undefined, table.code);
+  await assertTableHasNoActiveOrder(
+    table._id,
+    undefined,
+    undefined,
+    table.code,
+  );
 
   const [categories, menuItems] = await Promise.all([
     Category.find({ isActive: true }).sort({ sortOrder: 1, createdAt: -1 }),

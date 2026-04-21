@@ -102,7 +102,7 @@ export default function OrdersPage() {
       const [ordersResult, menuResult, tablesResult, categoryResult] =
         await Promise.allSettled([
           ordersApi.list(),
-          menuItemsApi.list(),
+          menuItemsApi.list({ limit: 1000 }),
           tablesApi.list(),
           categoriesApi.list(),
         ]);

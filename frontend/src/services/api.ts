@@ -338,6 +338,8 @@ export const menuItemsApi = {
     categoryId?: string;
     isAvailable?: boolean;
     isActive?: boolean;
+    page?: number;
+    limit?: number;
   }) => {
     const query = new URLSearchParams();
     if (params?.search) query.set("search", params.search);
@@ -347,6 +349,12 @@ export const menuItemsApi = {
     }
     if (typeof params?.isActive === "boolean") {
       query.set("isActive", String(params.isActive));
+    }
+    if (typeof params?.page === "number") {
+      query.set("page", String(params.page));
+    }
+    if (typeof params?.limit === "number") {
+      query.set("limit", String(params.limit));
     }
     const suffix = query.toString() ? `?${query.toString()}` : "";
 
