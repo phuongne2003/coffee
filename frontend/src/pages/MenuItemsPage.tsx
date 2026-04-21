@@ -144,7 +144,7 @@ export default function MenuItemsPage() {
     try {
       const [menuResult, categoryResult, ingredientResult] =
         await Promise.allSettled([
-          menuItemsApi.list({ isActive: true }),
+          menuItemsApi.list({ isActive: true, limit: 1000 }),
           categoriesApi.list(),
           ingredientsApi.list({ isActive: true, limit: 1000 }),
         ]);
